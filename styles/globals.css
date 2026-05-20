@@ -1,0 +1,4 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0A0A0F; }
+input, select { color: #F0EEF8 !important; }
+input::placeholder { color: #6B6880 !important; }
