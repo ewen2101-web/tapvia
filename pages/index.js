@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react'
   import Head from 'next/head'
   import { createClient } from '@supabase/supabase-js'
 
-  // ✅ INITIALISATION SUPABASE CÔTÉ CLIENT (utilise les variables NEXT_PUBLIC_)
-  const supabase = createClient(
+  // ✅ INITIALISATION SUPABASE CÔTÉ CLIENT (utilise les variables NEXT_PUBLIC_)  const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   )
 
   // Constants for pricing display (hardcoded)
-  const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }{loading ? 'Ajout...' : 'Créer client'</button>
+  const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
 
   export default function Admin() {
     // State variables
@@ -46,7 +45,7 @@ import { useState, useEffect } from 'react'
           setClients(data)
         } catch (err) {
           console.error('Error loading clients:', err)
-          setNotification({ type: 'error', message: 'Failed to load clients' })
+          setNotification({ type: 'error', message: 'Failed to load customers' })
         } finally {
           setLoading(false)
         }
@@ -58,7 +57,7 @@ import { useState, useEffect } from 'react'
     // Handle form submission (add new client)
     const handleSubmit = async (e) => {
       e.preventDefault()
-      if (!form.client_name || !form.destination || !form.client_email) {
+      if (!form.client_name || !form.destination || !form.customer_email) {
         setNotification({ type: 'error', message: 'All fields are required' })
         return
       }
@@ -75,9 +74,9 @@ import { useState, useEffect } from 'react'
             {
               slug,
               destination: form.destination,
-              client_name: form.client_name,
+              customer_name: form.customer_name,
               plan: form.plan,
-              client_email: form.client_email
+              customer_email: form.customer_email
             }
           ])
           .select()
@@ -88,23 +87,23 @@ import { useState, useEffect } from 'react'
         setClients([data[0], ...clients])
         // Reset form
         setForm({
-          client_name: '',
+          customer_name: '',
           slug: '',
           destination: '',
           plan: 'Starter',
-          client_email: ''
+          customer_email: ''
         })
-        setNotification({ type: 'success', message: 'Client added successfully!' })
+        setNotification({ type: 'success', message: 'Customer added successfully!' })
       } catch (err) {
-        console.error('Error adding client:', err)
-        setNotification({ type: 'error', message: 'Failed to add client' })
+        console.error('Error adding customer:', err)
+        setNotification({ type: 'error', message: 'Failed to add customer' })
       }
     }
 
     // Generate Stripe payment link
-    const handleGenerateStripeLink = async (client) => {
+    const handleGenerateStripeLink = async (customer) => {
       try {
-        setStripeLoading(client.id)
+        setStripeLoading(customer.id)
         // Hardcoded price IDs (matching stripe.js)
         const PRICE_IDS = {
           Starter: 'price_1TZGupHIjP9Yl8eI3nR5PvLx',
@@ -112,8 +111,8 @@ import { useState, useEffect } from 'react'
           Pro: 'price_1TZGvrHIjP9Yl8eI6FJSj25s'
         }
 
-        const priceId = PRICE_IDS[client.plan]
-        if (!priceId) throw new Error(`Invalid plan: ${client.plan}`)
+        const priceId = PRICE_IDS[customer.plan]
+        if (!priceId) throw new Error(`Invalid plan: ${customer.plan}`)
 
         // Import Stripe only when needed (to avoid build issues)
         const Stripe = require('stripe')
@@ -123,17 +122,17 @@ import { useState, useEffect } from 'react'
           mode: 'subscription',
           payment_method_types: ['card'],
           line_items: [{ price: priceId, quantity: 1 }],
-          customer_email: client.client_email,
-          metadata: { client_name: client.client_name, plan: client.plan },
+          customer_email: customer.customer_email,
+          metadata: { customer_name: customer.customer_name, plan: customer.plan },
           success_url: `${process.env.NEXT_PUBLIC_APP_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}`,
           locale: 'fr',
         })
 
-        setStripeLink({ url: session.url, client_name: client.client_name })
+        setStripeLink({ url: session.url, customer_name: customer.customer_name })
         setNotification({
           type: 'success',
-          message: `Payment link generated for ${client.client_name}`
+          message: `Payment link generated for ${customer.customer_name}`
         })
       } catch (err) {
         console.error('Stripe error:', err)
@@ -153,16 +152,16 @@ import { useState, useEffect } from 'react'
       })
     }
 
-    // Delete client
-    const handleDeleteClient = async (id) => {
-      if (!window.confirm('Are you sure you want to delete this client?')) return
+    // Delete customer
+    const handleDeleteCustomer = async (id) => {
+      if (!window.confirm('Are you sure you want to delete this customer?')) return
       try {
         await supabase.from('redirects').delete().match({ id })
-        setClients(clients.filter(client => client.id !== id))
-        setNotification({ type: 'success', message: 'Client deleted' })
+        setClients(clients.filter(customer => customer.id !== id))
+        setNotification({ type: 'success', message: 'Customer deleted' })
       } catch (err) {
-        console.error('Error deleting client:', err)
-        setNotification({ type: 'error', message: 'Failed to delete client' })
+        console.error('Error deleting customer:', err)
+        setNotification({ type: 'error', message: 'Failed to delete customer' })
       }
     }
 
@@ -283,7 +282,7 @@ import { useState, useEffect } from 'react'
 
         {/* Main Content */}
         <div style={{ padding: '24px' }}>
-          <div style={{
+          <div style={{ 
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -322,7 +321,7 @@ import { useState, useEffect } from 'react'
             </div>
           </div>
 
-          {/* Add Client Modal */}
+          {/* Add Customer Modal */}
           {modal && (
             <div style={{
               position: 'fixed',
@@ -349,8 +348,8 @@ import { useState, useEffect } from 'react'
                     <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px' }}>Nom du client</label>
                     <input
                       type="text"
-                      value={form.client_name}
-                      onChange={(e) => setForm({ ...form, client_name: e.target.value })}
+                      value={form.customer_name}
+                      onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
                       placeholder="Ex: Pizza Bella"
                       style={{
                         padding: '12px',
@@ -383,9 +382,9 @@ import { useState, useEffect } from 'react'
                     <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px' }}>Email du client</label>
                     <input
                       type="email"
-                      value={form.client_email}
-                      onChange={(e) => setForm({ ...form, client_email: e.target.value })}
-                      placeholder="client@email.com"
+                      value={form.customer_email}
+                      onChange={(e) => setForm({ ...form, customer_email: e.target.value })}
+                      placeholder="customer@email.com"
                       style={{
                         padding: '12px',
                         border: '1px solid #333',
@@ -445,22 +444,22 @@ import { useState, useEffect } from 'react'
                       }}
                     >
                       {loading ? 'Ajout...' : 'Créer client'}
-                    }
+                    </button>  // ✅ CORRECTION ICI : </button> au lieu de }
                   </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* Clients List */}
+          {/* Customers List */}
           <div style={{ marginTop: '24px' }}>
-            <h2 style={{ marginBottom: '16px', fontSize: '20px' }}>Clients ({clients.length})</h2>
+            <h2 style={{ marginBottom: '16px', fontSize: '20px' }}>Customers ({clients.length})</h2>
             {loading ? (
               <p style={{ textAlign: 'center', color: '#6B6880' }}>Chargement...</p>
             ) : clients.length === 0 ? (
-              <p style={{ textAlign: 'center', color: '#6B6880' }}>Aucun client enregistré</p>
+              <p style={{ textAlign: 'center', color: '#6B6880' }}>Aucun customer enregistré</p>
             ) : (
-              <div style={{
+              <div style={{ 
                 background: '#111118',
                 borderRadius: '8px',
                 overflow: 'hidden'
@@ -475,28 +474,28 @@ import { useState, useEffect } from 'react'
                     </tr>
                   </thead>
                   <tbody>
-                    {clients.map((client) => (
-                      <tr key={client.id} style={{ borderBottom: '1px solid #222' }}>
-                        <td style={{ padding: '12px', fontSize: '14px' }}>{client.client_name}</td>
-                        <td style={{ padding: '12px', fontSize: '14px' }}>{client.plan}</td>
-                        <td style={{ padding: '12px', fontSize: '14px' }}>{client.client_email}</td>
+                    {clients.map((customer) => (
+                      <tr key={customer.id} style={{ borderBottom: '1px solid #222' }}>
+                        <td style={{ padding: '12px', fontSize: '14px' }}>{customer.customer_name}</td>
+                        <td style={{ padding: '12px', fontSize: '14px' }}>{customer.plan}</td>
+                        <td style={{ padding: '12px', fontSize: '14px' }}>{customer.customer_email}</td>
                         <td style={{ padding: '12px', fontSize: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <button
-                            onClick={() => handleGenerateStripeLink(client)}
-                            disabled={stripeLoading === client.id}
+                            onClick={() => handleGenerateStripeLink(customer)}
+                            disabled={stripeLoading === customer.id}
                             style={{
                               padding: '6px 10px',
-                              background: stripeLoading === client.id ? '#6B6880' : '#F59E0B',
+                              background: stripeLoading === customer.id ? '#6B6880' : '#F59E0B',
                               color: 'white',
                               border: 'none',
                               borderRadius: '4px',
                               fontSize: '12px',
-                              cursor: stripeLoading === client.id ? 'not-allowed' : 'pointer'
+                              cursor: stripeLoading === customer.id ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            {stripeLoading === client.id ? 'Génération...' : '💳 Lien paiement'}
+                            {stripeLoading === customer.id ? 'Génération...' : '💳 Lien paiement'}
                           </button>
-                          {stripeLink && stripeLink.client_name === client.client_name && (
+                          {stripeLink && stripeLink.customer_name === customer.customer_name && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <button
                                 onClick={() => handleCopyToClipboard(stripeLink.url)}
@@ -532,7 +531,7 @@ import { useState, useEffect } from 'react'
                             </div>
                           )}
                           <button
-                            onClick={() => handleDeleteClient(client.id)}
+                            onClick={() => handleDeleteCustomer(customer.id)}
                             style={{
                               padding: '6px 10px',
                               background: '#EF4444',
@@ -546,7 +545,7 @@ import { useState, useEffect } from 'react'
                             🗑️  Supprimer
                           </button>
                         </td>
-                      )
+                      ))
                     ))}
                   </tbody>
                 </table>
