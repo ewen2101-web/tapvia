@@ -8,15 +8,20 @@ export default function Admin() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
-  const [form, setForm] = useState({ client_name: '', slug: '', destination: '', plan: 'Starter' })
+  const [form, setForm] = useState({ client_name: '', slug: '', destination: '', plan: 'Starter', client_email: '' })
   const [copied, setCopied] = useState(null)
   const [password, setPassword] = useState('')
   const [auth, setAuth] = useState(false)
+  const [stripeLoading, setStripeLoading] = useState(null)
+  const [notification, setNotification] = useState(null)
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
-  useEffect(() => {
-    if (auth) fetchClients()
-  }, [auth])
+  useEffect(() => { if (auth) fetchClients() }, [auth])
+
+  function notify(msg, type = 'success') {
+    setNotification({ msg, type })
+    setTimeout(() => setNotification(null), 3500)
+  }
 
   async function fetchClients() {
     setLoading(true)
@@ -28,7 +33,7 @@ export default function Admin() {
 
   async function saveClient() {
     if (!form.client_name || !form.slug || !form.destination) {
-      alert('Remplis tous les champs.')
+      alert('Remplis tous les champs obligatoires.')
       return
     }
     if (editTarget) {
@@ -37,17 +42,49 @@ export default function Admin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: editTarget.id, destination: form.destination, plan: form.plan, active: true })
       })
+      notify('Client mis à jour ✓')
     } else {
       await fetch('/api/redirects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
       })
+      notify('Client créé ✓')
     }
     setModal(false)
     setEditTarget(null)
-    setForm({ client_name: '', slug: '', destination: '', plan: 'Starter' })
+    setForm({ client_name: '', slug: '', destination: '', plan: 'Starter', client_email: '' })
     fetchClients()
+  }
+
+  async function sendStripeLink(client) {
+    if (!client.client_email) {
+      const email = prompt(`Email du client "${client.client_name}" pour envoyer le lien de paiement :`)
+      if (!email) return
+      client = { ...client, client_email: email }
+    }
+    setStripeLoading(client.id)
+    try {
+      const res = await fetch('/api/stripe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: client.client_name,
+          client_email: client.client_email,
+          plan: client.plan,
+        })
+      })
+      const data = await res.json()
+      if (data.url) {
+        navigator.clipboard?.writeText(data.url)
+        notify(`Lien Stripe copié ! Envoie-le à ${client.client_name} 📋`)
+      } else {
+        notify('Erreur : ' + (data.error || 'inconnue'), 'error')
+      }
+    } catch (e) {
+      notify('Erreur réseau', 'error')
+    }
+    setStripeLoading(null)
   }
 
   async function deleteClient(id, name) {
@@ -62,13 +99,13 @@ export default function Admin() {
 
   function openEdit(c) {
     setEditTarget(c)
-    setForm({ client_name: c.client_name, slug: c.slug, destination: c.destination, plan: c.plan })
+    setForm({ client_name: c.client_name, slug: c.slug, destination: c.destination, plan: c.plan, client_email: c.client_email || '' })
     setModal(true)
   }
 
   function openNew() {
     setEditTarget(null)
-    setForm({ client_name: '', slug: '', destination: '', plan: 'Starter' })
+    setForm({ client_name: '', slug: '', destination: '', plan: 'Starter', client_email: '' })
     setModal(true)
   }
 
@@ -87,7 +124,6 @@ export default function Admin() {
   const totalScans = clients.reduce((acc, c) => acc + (c.scans?.[0]?.count || 0), 0)
   const mrr = clients.reduce((acc, c) => acc + (PLAN_MRR[c.plan] || 0), 0)
 
-  // Écran de connexion
   if (!auth) {
     return (
       <div style={S.loginPage}>
@@ -95,14 +131,9 @@ export default function Admin() {
         <div style={S.loginBox}>
           <div style={S.logoMark}>tap<span style={{ color: '#7C6AF7' }}>via</span></div>
           <div style={S.loginSub}>Accès administrateur</div>
-          <input
-            style={S.input}
-            type="password"
-            placeholder="Mot de passe"
-            value={password}
+          <input style={S.input} type="password" placeholder="Mot de passe" value={password}
             onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && setAuth(password === ADMIN_PASSWORD)}
-          />
+            onKeyDown={e => e.key === 'Enter' && setAuth(password === ADMIN_PASSWORD)} />
           <button style={S.btnPrimary} onClick={() => {
             if (password === ADMIN_PASSWORD) setAuth(true)
             else alert('Mot de passe incorrect')
@@ -116,6 +147,20 @@ export default function Admin() {
     <div style={S.page}>
       <Head><title>Tapvia — Dashboard</title></Head>
 
+      {/* Notification */}
+      {notification && (
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 200,
+          background: notification.type === 'error' ? '#F0525220' : '#5EE8B020',
+          border: `1px solid ${notification.type === 'error' ? '#F05252' : '#5EE8B0'}`,
+          color: notification.type === 'error' ? '#F05252' : '#5EE8B0',
+          padding: '12px 20px', borderRadius: 8, fontFamily: 'monospace', fontSize: 13,
+          boxShadow: '0 4px 20px #00000040'
+        }}>
+          {notification.msg}
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside style={S.sidebar}>
         <div style={S.logo}>
@@ -123,7 +168,7 @@ export default function Admin() {
           <div style={S.logoSub}>NFC Review Platform</div>
         </div>
         <nav>
-          {['Dashboard', 'Clients', 'Paramètres'].map(item => (
+          {['Dashboard', 'Clients', 'Paiements', 'Paramètres'].map(item => (
             <div key={item} style={{ ...S.navItem, ...(item === 'Dashboard' ? S.navActive : {}) }}>
               <span style={S.navDot}></span>{item}
             </div>
@@ -132,7 +177,7 @@ export default function Admin() {
         <div style={S.sidebarBottom}>
           <div style={S.planBadge}>✦ TAPVIA ADMIN</div>
           <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#6B6880', marginTop: 6 }}>
-            {clients.length} clients actifs
+            {clients.length} clients · {mrr}€ MRR
           </div>
         </div>
       </aside>
@@ -170,18 +215,14 @@ export default function Admin() {
             </div>
             <div style={S.tableWrap}>
               {loading ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 12 }}>
-                  Chargement...
-                </div>
+                <div style={{ padding: 40, textAlign: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 12 }}>Chargement...</div>
               ) : clients.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 12 }}>
-                  Aucun client. Crée ton premier lien →
-                </div>
+                <div style={{ padding: 40, textAlign: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 12 }}>Aucun client. Crée ton premier lien →</div>
               ) : (
                 <table style={S.table}>
                   <thead>
                     <tr>
-                      {['Client', 'Lien NFC', 'Destination Google', 'Plan', 'Scans', ''].map(h => (
+                      {['Client', 'Lien NFC', 'Plan', 'Scans', 'Paiement', ''].map(h => (
                         <th key={h} style={S.th}>{h}</th>
                       ))}
                     </tr>
@@ -192,33 +233,34 @@ export default function Admin() {
                         <td style={S.td}>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{c.client_name}</div>
                           <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 2 }}>
-                            {c.active ? '● Actif' : '○ Inactif'}
+                            {c.client_email || 'Pas d\'email'}
                           </div>
                         </td>
                         <td style={S.td}>
-                          <div
-                            style={S.linkCell}
-                            onClick={() => copyLink(c.slug)}
-                            title="Cliquer pour copier"
-                          >
+                          <div style={S.linkCell} onClick={() => copyLink(c.slug)} title="Copier le lien NFC">
                             /c/{c.slug}
                             <span style={{ fontSize: 10, color: copied === c.slug ? '#5EE8B0' : '#6B6880' }}>
-                              {copied === c.slug ? ' ✓ copié' : ' ⎘'}
+                              {copied === c.slug ? ' ✓' : ' ⎘'}
                             </span>
                           </div>
                         </td>
                         <td style={S.td}>
-                          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {c.destination}
-                          </div>
-                        </td>
-                        <td style={S.td}>
-                          <span style={{ ...S.planBadgeSmall, color: c.plan === 'Pro' ? '#5EE8B0' : c.plan === 'Business' ? '#7C6AF7' : '#6B6880' }}>
-                            {c.plan}
+                          <span style={{ fontFamily: 'monospace', fontSize: 11, color: c.plan === 'Pro' ? '#5EE8B0' : c.plan === 'Business' ? '#7C6AF7' : '#6B6880' }}>
+                            {c.plan} · {PLAN_MRR[c.plan]}€/mois
                           </span>
                         </td>
                         <td style={S.td}>
                           <div style={{ fontWeight: 700 }}>{c.scans?.[0]?.count || 0}</div>
+                        </td>
+                        <td style={S.td}>
+                          <button
+                            style={{ ...S.btnStripe, opacity: stripeLoading === c.id ? 0.6 : 1 }}
+                            onClick={() => sendStripeLink(c)}
+                            disabled={stripeLoading === c.id}
+                            title="Générer et copier le lien de paiement Stripe"
+                          >
+                            {stripeLoading === c.id ? '...' : '💳 Lien paiement'}
+                          </button>
                         </td>
                         <td style={S.td}>
                           <button style={{ ...S.btnGhost, ...S.btnSm, marginRight: 6 }} onClick={() => openEdit(c)}>Modifier</button>
@@ -229,6 +271,14 @@ export default function Admin() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+
+          {/* Bloc info Stripe */}
+          <div style={{ background: '#111118', border: '1px solid #7C6AF730', borderRadius: 10, padding: '16px 20px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#7C6AF7' }}>💳 Comment fonctionne le paiement</div>
+            <div style={{ fontSize: 12, color: '#6B6880', lineHeight: 1.7 }}>
+              1. Crée un client avec son email · 2. Clique "Lien paiement" → le lien Stripe est copié dans ton presse-papier · 3. Envoie-le au client par WhatsApp ou email · 4. Le client paie en ligne · 5. Stripe prélève automatiquement chaque mois
             </div>
           </div>
         </div>
@@ -242,24 +292,30 @@ export default function Admin() {
 
             {!editTarget && (
               <>
-                <label style={S.formLabel}>Nom du client</label>
+                <label style={S.formLabel}>Nom du client *</label>
                 <input style={S.input} placeholder="ex: Pizza Bella" value={form.client_name}
                   onChange={e => handleNameChange(e.target.value)} />
 
-                <label style={S.formLabel}>Slug (URL)</label>
+                <label style={S.formLabel}>Slug (URL) *</label>
                 <input style={S.input} placeholder="pizza-bella" value={form.slug}
                   onChange={e => setForm(f => ({ ...f, slug: e.target.value }))} />
                 <div style={S.slugPreview}>
-                  Lien NFC → <span style={{ color: '#7C6AF7' }}>{typeof window !== 'undefined' ? window.location.origin : 'https://tonsite.fr'}/c/{form.slug || '...'}</span>
+                  Lien NFC → <span style={{ color: '#7C6AF7' }}>
+                    {typeof window !== 'undefined' ? window.location.origin : 'https://tapvia.vercel.app'}/c/{form.slug || '...'}
+                  </span>
                 </div>
               </>
             )}
 
-            <label style={S.formLabel}>Lien Google Reviews</label>
-            <input style={S.input} placeholder="https://g.page/r/XXXXX/review" value={form.destination}
+            <label style={S.formLabel}>Lien Google Reviews *</label>
+            <input style={S.input} placeholder="https://search.google.com/local/writereview?placeid=..." value={form.destination}
               onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
 
-            <label style={S.formLabel}>Plan</label>
+            <label style={S.formLabel}>Email du client (pour Stripe)</label>
+            <input style={S.input} placeholder="contact@pizzabella.fr" value={form.client_email}
+              onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} />
+
+            <label style={S.formLabel}>Plan *</label>
             <select style={S.input} value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
               <option value="Starter">Starter — 19€/mois</option>
               <option value="Business">Business — 39€/mois</option>
@@ -279,7 +335,6 @@ export default function Admin() {
   )
 }
 
-// Styles
 const S = {
   page: { display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh', background: '#0A0A0F', color: '#F0EEF8', fontFamily: 'system-ui, sans-serif' },
   loginPage: { minHeight: '100vh', background: '#0A0A0F', display: 'flex', alignItems: 'center', justifyContent: 'center' },
@@ -311,13 +366,13 @@ const S = {
   tr: { borderBottom: '1px solid #ffffff08' },
   td: { padding: '13px 16px', verticalAlign: 'middle', fontSize: 13 },
   linkCell: { fontFamily: 'monospace', fontSize: 11, color: '#7C6AF7', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 },
-  planBadgeSmall: { fontFamily: 'monospace', fontSize: 11 },
   btnPrimary: { background: '#7C6AF7', color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontWeight: 600, fontSize: 13 },
   btnGhost: { background: 'transparent', color: '#6B6880', border: '1px solid #ffffff1a', borderRadius: 6, padding: '8px 14px', cursor: 'pointer', fontSize: 13 },
   btnDanger: { background: '#F0525215', color: '#F05252', border: '1px solid #F0525230', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', fontSize: 12 },
+  btnStripe: { background: '#7C6AF720', color: '#7C6AF7', border: '1px solid #7C6AF740', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 600 },
   btnSm: { padding: '5px 10px', fontSize: 12 },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  modal: { background: '#111118', border: '1px solid #ffffff1a', borderRadius: 12, padding: 28, width: 440, maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 10 },
+  modal: { background: '#111118', border: '1px solid #ffffff1a', borderRadius: 12, padding: 28, width: 460, maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 10 },
   modalTitle: { fontSize: 16, fontWeight: 800, marginBottom: 10 },
   formLabel: { fontFamily: 'monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6B6880', display: 'block', marginBottom: 4, marginTop: 4 },
   input: { width: '100%', background: '#0A0A0F', border: '1px solid #ffffff1a', borderRadius: 6, color: '#F0EEF8', fontFamily: 'monospace', fontSize: 12, padding: '10px 12px', outline: 'none' },
