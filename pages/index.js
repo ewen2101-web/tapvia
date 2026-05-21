@@ -1,17 +1,7 @@
 import { useState, useEffect } from 'react'
-  import Head from 'next/head'
-  // 👇 AJOUTEZ CETTE LIGNE (import Supabase)
-  import { createClient } from '@supabase/supabase-js'
+import Head from 'next/head'
 
-  const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
-
-  // 👇 AJOUTEZ CE BLOC (initialisation Supabase côté client)
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  )
-
-  export default function Admin() {
+const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
 
 export default function Admin() {
   const [clients, setClients] = useState([])
