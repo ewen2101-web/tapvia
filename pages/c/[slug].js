@@ -1,39 +1,39 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../../lib/supabase'
 
-  const getSupabaseClient = () => {
-    return createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY
-    )
+// Cette page gère la redirection NFC
+// Ex: tapvia.fr/c/pizza-bella → Google Reviews de Pizza Bella
+
+export async function getServerSideProps({ params }) {
+  const { slug } = params
+
+  // 1. Cherche le lien dans la base de données
+  const { data, error } = await supabase
+    .from('redirects')
+    .select('id, destination, active')
+    .eq('slug', slug)
+    .single()
+
+  // 2. Slug introuvable ou lien désactivé → page 404
+  if (error || !data || !data.active) {
+    return { notFound: true }
   }
 
-  export async function getServerSideProps({ params }) {
-    const { slug } = params
-    const supabase = getSupabaseClient()
+  // 3. Enregistre le scan dans la table analytics
+  await supabase.from('scans').insert({
+    redirect_id: data.id,
+    scanned_at: new Date().toISOString(),
+  })
 
-    const { data, error } = await supabase
-      .from('redirects')
-      .select('destination, id')
-      .eq('slug', slug)
-      .single()
-
-    if (error || !data) {
-      return { notFound: true }
-    }
-
-    await supabase.from('scans').insert({
-      redirect_id: data.id,
-      scanned_at: new Date().toISOString(),
-    })
-
-    return {
-      redirect: {
-        destination: data.destination,
-        permanent: false,
-      },
-    }
+  // 4. Redirige instantanément vers Google Reviews
+  return {
+    redirect: {
+      destination: data.destination,
+      permanent: false,
+    },
   }
+}
 
-  export default function RedirectPage() {
-    return null
-  }
+// Jamais affiché — la redirection est immédiate côté serveur
+export default function RedirectPage() {
+  return null
+}
