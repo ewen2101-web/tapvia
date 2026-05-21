@@ -14,6 +14,7 @@ export default function Admin() {
   const [auth, setAuth] = useState(false)
   const [stripeLoading, setStripeLoading] = useState(null)
   const [notification, setNotification] = useState(null)
+  const [stripeLink, setStripeLink] = useState(null) // { url, client_name }
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => { if (auth) fetchClients() }, [auth])
@@ -76,8 +77,7 @@ export default function Admin() {
       })
       const data = await res.json()
       if (data.url) {
-        navigator.clipboard?.writeText(data.url)
-        notify(`Lien Stripe copié ! Envoie-le à ${client.client_name} 📋`)
+        setStripeLink({ url: data.url, client_name: client.client_name })
       } else {
         notify('Erreur : ' + (data.error || 'inconnue'), 'error')
       }
@@ -326,6 +326,61 @@ export default function Admin() {
               <button style={S.btnGhost} onClick={() => setModal(false)}>Annuler</button>
               <button style={S.btnPrimary} onClick={saveClient}>
                 {editTarget ? 'Enregistrer →' : 'Créer →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal lien Stripe */}
+      {stripeLink && (
+        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setStripeLink(null)}>
+          <div style={S.modal}>
+            <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>💳</div>
+            <div style={S.modalTitle}>Lien de paiement — {stripeLink.client_name}</div>
+            <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 12 }}>
+              Envoie ce lien au client par WhatsApp, email ou SMS. Il sera débité automatiquement chaque mois.
+            </div>
+
+            {/* Lien affiché + sélectionnable */}
+            <div
+              style={{
+                background: '#0A0A0F',
+                border: '1px solid #7C6AF740',
+                borderRadius: 8,
+                padding: '12px 14px',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                color: '#7C6AF7',
+                wordBreak: 'break-all',
+                userSelect: 'all',
+                cursor: 'text',
+                marginBottom: 14,
+              }}
+              onClick={e => {
+                const range = document.createRange()
+                range.selectNodeContents(e.currentTarget)
+                window.getSelection().removeAllRanges()
+                window.getSelection().addRange(range)
+              }}
+            >
+              {stripeLink.url}
+            </div>
+
+            <div style={{ fontSize: 11, color: '#6B6880', marginBottom: 16, fontFamily: 'monospace' }}>
+              💡 Clique sur le lien pour le sélectionner, puis Ctrl+C / Cmd+C pour copier
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <a
+                href={stripeLink.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...S.btnPrimary, textDecoration: 'none', flex: 1, textAlign: 'center' }}
+              >
+                Ouvrir le lien ↗
+              </a>
+              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setStripeLink(null)}>
+                Fermer
               </button>
             </div>
           </div>
