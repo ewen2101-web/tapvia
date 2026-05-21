@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
   // ✅ INITIALISATION SUPABASE CÔTÉ CLIENT (utilise les variables NEXT_PUBLIC_)  const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  )
+  
 
   // Constants for pricing display (hardcoded)
   const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
