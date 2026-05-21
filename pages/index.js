@@ -444,7 +444,7 @@ import { useState, useEffect } from 'react'
                       }}
                     >
                       {loading ? 'Ajout...' : 'Créer client'}
-                    </button>  // ✅ CORRECTED: This was the problematic line - now properly closed with </button>
+                    </button>  // ✅ CORRECTED: Properly closed with </button>
                   </div>
                 </form>
               </div>
@@ -555,4 +555,4 @@ import { useState, useEffect } from 'react'
         </div>
       </div>
     )
-  }
+  )
