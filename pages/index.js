@@ -9,7 +9,7 @@ import { useState, useEffect } from 'react'
   )
 
   // Constants for pricing display (hardcoded)
-  const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
+  const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }{loading ? 'Ajout...' : 'Créer client'</button>
 
   export default function Admin() {
     // State variables
