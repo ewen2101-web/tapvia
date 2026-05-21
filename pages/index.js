@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react'
   import Head from 'next/head'
   import { createClient } from '@supabase/supabase-js'
+
   // ✅ INITIALISATION SUPABASE CÔTÉ CLIENT (utilise les variables NEXT_PUBLIC_)
-  const supabase = createClient(    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   )
 
-  // Constants for pricing (hardcoded as per your reverted state)
+  // Constants for pricing display (hardcoded)
   const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
 
   export default function Admin() {
-    // State variables (exactly as you had them)
+    // State variables
     const [clients, setClients] = useState([])
     const [loading, setLoading] = useState(true)
     const [modal, setModal] = useState(false)
@@ -103,7 +105,7 @@ import { useState, useEffect } from 'react'
     const handleGenerateStripeLink = async (client) => {
       try {
         setStripeLoading(client.id)
-        // Hardcoded price IDs (matching your reverted stripe.js)
+        // Hardcoded price IDs (matching stripe.js)
         const PRICE_IDS = {
           Starter: 'price_1TZGupHIjP9Yl8eI3nR5PvLx',
           Business: 'price_1TZGvQHIjP9Yl8eIB10ZyB7k',
@@ -281,7 +283,7 @@ import { useState, useEffect } from 'react'
 
         {/* Main Content */}
         <div style={{ padding: '24px' }}>
-          <div style={{ 
+          <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -443,7 +445,7 @@ import { useState, useEffect } from 'react'
                       }}
                     >
                       {loading ? 'Ajout...' : 'Créer client'}
-                    </button>
+                    }
                   </div>
                 </form>
               </div>
@@ -458,7 +460,7 @@ import { useState, useEffect } from 'react'
             ) : clients.length === 0 ? (
               <p style={{ textAlign: 'center', color: '#6B6880' }}>Aucun client enregistré</p>
             ) : (
-              <div style={{ 
+              <div style={{
                 background: '#111118',
                 borderRadius: '8px',
                 overflow: 'hidden'
@@ -544,7 +546,7 @@ import { useState, useEffect } from 'react'
                             🗑️  Supprimer
                           </button>
                         </td>
-                      </tr>
+                      )
                     ))}
                   </tbody>
                 </table>
