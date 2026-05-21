@@ -9,22 +9,16 @@ const PRICE_IDS = {
 }
 
 export default async function handler(req, res) {
-
-  // Créer un lien de paiement Stripe pour un client
   if (req.method === 'POST') {
     const { client_name, client_email, plan } = req.body
-
     if (!client_email || !plan) {
       return res.status(400).json({ error: 'Email et plan requis' })
     }
-
     const priceId = PRICE_IDS[plan]
     if (!priceId) {
       return res.status(400).json({ error: 'Plan invalide' })
     }
-
     try {
-      // Crée une session de paiement Stripe Checkout
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
         payment_method_types: ['card'],
@@ -35,14 +29,11 @@ export default async function handler(req, res) {
         cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}`,
         locale: 'fr',
       })
-
       return res.status(200).json({ url: session.url, session_id: session.id })
-
     } catch (err) {
       console.error('Stripe error:', err)
       return res.status(500).json({ error: err.message })
     }
   }
-
   return res.status(405).json({ error: 'Méthode non autorisée' })
 }
