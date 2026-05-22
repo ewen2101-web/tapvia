@@ -13,8 +13,10 @@ export default function Admin() {
   const [password, setPassword] = useState('')
   const [auth, setAuth] = useState(false)
   const [stripeLoading, setStripeLoading] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(null)
   const [notification, setNotification] = useState(null)
-  const [stripeLink, setStripeLink] = useState(null) // { url, client_name }
+  const [stripeLink, setStripeLink] = useState(null)
+  const [inviteLink, setInviteLink] = useState(null) // { url, client_name }
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => { if (auth) fetchClients() }, [auth])
@@ -60,7 +62,7 @@ export default function Admin() {
 
   async function sendStripeLink(client) {
     if (!client.client_email) {
-      const email = prompt(`Email du client "${client.client_name}" pour envoyer le lien de paiement :`)
+      const email = prompt(`Email du client "${client.client_name}" :`)
       if (!email) return
       client = { ...client, client_email: email }
     }
@@ -69,11 +71,7 @@ export default function Admin() {
       const res = await fetch('/api/stripe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_name: client.client_name,
-          client_email: client.client_email,
-          plan: client.plan,
-        })
+        body: JSON.stringify({ client_name: client.client_name, client_email: client.client_email, plan: client.plan })
       })
       const data = await res.json()
       if (data.url) {
@@ -85,6 +83,30 @@ export default function Admin() {
       notify('Erreur réseau', 'error')
     }
     setStripeLoading(null)
+  }
+
+  async function sendInvite(client) {
+    if (!client.client_email) {
+      notify('Ce client n\'a pas d\'email. Modifie-le d\'abord.', 'error')
+      return
+    }
+    setInviteLoading(client.id)
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_id: client.id, email: client.client_email })
+      })
+      const data = await res.json()
+      if (data.invite_url) {
+        setInviteLink({ url: data.invite_url, client_name: client.client_name, email: client.client_email })
+      } else {
+        notify('Erreur : ' + (data.error || 'inconnue'), 'error')
+      }
+    } catch (e) {
+      notify('Erreur réseau', 'error')
+    }
+    setInviteLoading(null)
   }
 
   async function deleteClient(id, name) {
@@ -222,7 +244,7 @@ export default function Admin() {
                 <table style={S.table}>
                   <thead>
                     <tr>
-                      {['Client', 'Lien NFC', 'Plan', 'Scans', 'Paiement', ''].map(h => (
+                      {['Client', 'Lien NFC', 'Plan', 'Scans', 'Invitation', 'Paiement', ''].map(h => (
                         <th key={h} style={S.th}>{h}</th>
                       ))}
                     </tr>
@@ -254,12 +276,22 @@ export default function Admin() {
                         </td>
                         <td style={S.td}>
                           <button
+                            style={{ ...S.btnInvite, opacity: inviteLoading === c.id ? 0.6 : 1 }}
+                            onClick={() => sendInvite(c)}
+                            disabled={inviteLoading === c.id}
+                            title="Générer le lien d'accès au dashboard client"
+                          >
+                            {inviteLoading === c.id ? '...' : '✉️ Inviter'}
+                          </button>
+                        </td>
+                        <td style={S.td}>
+                          <button
                             style={{ ...S.btnStripe, opacity: stripeLoading === c.id ? 0.6 : 1 }}
                             onClick={() => sendStripeLink(c)}
                             disabled={stripeLoading === c.id}
-                            title="Générer et copier le lien de paiement Stripe"
+                            title="Générer le lien de paiement Stripe"
                           >
-                            {stripeLoading === c.id ? '...' : '💳 Lien paiement'}
+                            {stripeLoading === c.id ? '...' : '💳 Paiement'}
                           </button>
                         </td>
                         <td style={S.td}>
@@ -274,17 +306,17 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* Bloc info Stripe */}
+          {/* Bloc info */}
           <div style={{ background: '#111118', border: '1px solid #7C6AF730', borderRadius: 10, padding: '16px 20px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#7C6AF7' }}>💳 Comment fonctionne le paiement</div>
-            <div style={{ fontSize: 12, color: '#6B6880', lineHeight: 1.7 }}>
-              1. Crée un client avec son email · 2. Clique "Lien paiement" → le lien Stripe est copié dans ton presse-papier · 3. Envoie-le au client par WhatsApp ou email · 4. Le client paie en ligne · 5. Stripe prélève automatiquement chaque mois
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#7C6AF7' }}>🚀 Comment onboarder un nouveau client</div>
+            <div style={{ fontSize: 12, color: '#6B6880', lineHeight: 1.9 }}>
+              1. Crée le client avec son email · 2. Clique <strong style={{color:'#5EE8B0'}}>✉️ Inviter</strong> → copie le lien et envoie-le au client · 3. Le client active son compte et accède à son dashboard · 4. Clique <strong style={{color:'#7C6AF7'}}>💳 Paiement</strong> → envoie le lien Stripe pour l'abonnement
             </div>
           </div>
         </div>
       </main>
 
-      {/* Modal */}
+      {/* Modal nouveau/modifier client */}
       {modal && (
         <div style={S.overlay} onClick={e => e.target === e.currentTarget && setModal(false)}>
           <div style={S.modal}>
@@ -295,7 +327,6 @@ export default function Admin() {
                 <label style={S.formLabel}>Nom du client *</label>
                 <input style={S.input} placeholder="ex: Pizza Bella" value={form.client_name}
                   onChange={e => handleNameChange(e.target.value)} />
-
                 <label style={S.formLabel}>Slug (URL) *</label>
                 <input style={S.input} placeholder="pizza-bella" value={form.slug}
                   onChange={e => setForm(f => ({ ...f, slug: e.target.value }))} />
@@ -311,7 +342,7 @@ export default function Admin() {
             <input style={S.input} placeholder="https://search.google.com/local/writereview?placeid=..." value={form.destination}
               onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} />
 
-            <label style={S.formLabel}>Email du client (pour Stripe)</label>
+            <label style={S.formLabel}>Email du client *</label>
             <input style={S.input} placeholder="contact@pizzabella.fr" value={form.client_email}
               onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} />
 
@@ -331,6 +362,75 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* Modal lien invitation */}
+      {inviteLink && (
+        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setInviteLink(null)}>
+          <div style={S.modal}>
+            <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>✉️</div>
+            <div style={S.modalTitle}>Lien d'invitation — {inviteLink.client_name}</div>
+            <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 4 }}>
+              Envoie ce lien à <strong style={{color:'#F0EEF8'}}>{inviteLink.email}</strong> par WhatsApp ou email.
+            </div>
+            <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 12 }}>
+              Le client clique → choisit son mot de passe → accède à son dashboard. Lien valable <strong style={{color:'#F0A050'}}>7 jours</strong>.
+            </div>
+
+            <div
+              style={{
+                background: '#0A0A0F', border: '1px solid #5EE8B040', borderRadius: 8,
+                padding: '12px 14px', fontFamily: 'monospace', fontSize: 11, color: '#5EE8B0',
+                wordBreak: 'break-all', userSelect: 'all', cursor: 'text', marginBottom: 8,
+              }}
+              onClick={e => {
+                const range = document.createRange()
+                range.selectNodeContents(e.currentTarget)
+                window.getSelection().removeAllRanges()
+                window.getSelection().addRange(range)
+              }}
+            >
+              {inviteLink.url}
+            </div>
+
+            <div style={{ fontSize: 11, color: '#6B6880', marginBottom: 16, fontFamily: 'monospace' }}>
+              💡 Clique sur le lien pour le sélectionner, puis Ctrl+C / Cmd+C pour copier
+            </div>
+
+            {/* Message WhatsApp prêt à l'emploi */}
+            <div style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
+              <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                📱 Message WhatsApp prêt à copier
+              </div>
+              <div
+                style={{ fontSize: 12, color: '#F0EEF8', lineHeight: 1.6, userSelect: 'all', cursor: 'text' }}
+                onClick={e => {
+                  const range = document.createRange()
+                  range.selectNodeContents(e.currentTarget)
+                  window.getSelection().removeAllRanges()
+                  window.getSelection().addRange(range)
+                }}
+              >
+                {`Bonjour ! 👋\n\nVoici votre accès à votre dashboard Tapvia pour suivre vos avis Google en temps réel.\n\n🔗 Activez votre compte ici (valable 7 jours) :\n${inviteLink.url}\n\nVous choisirez votre mot de passe directement sur la page.\n\nÀ bientôt ! 🚀`}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <a
+                href={inviteLink.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...S.btnPrimary, textDecoration: 'none', flex: 1, textAlign: 'center', background: '#5EE8B0', color: '#0A0A0F' }}
+              >
+                Tester le lien ↗
+              </a>
+              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setInviteLink(null)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal lien Stripe */}
       {stripeLink && (
         <div style={S.overlay} onClick={e => e.target === e.currentTarget && setStripeLink(null)}>
@@ -338,23 +438,13 @@ export default function Admin() {
             <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>💳</div>
             <div style={S.modalTitle}>Lien de paiement — {stripeLink.client_name}</div>
             <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 12 }}>
-              Envoie ce lien au client par WhatsApp, email ou SMS. Il sera débité automatiquement chaque mois.
+              Envoie ce lien au client. Il sera débité automatiquement chaque mois.
             </div>
-
-            {/* Lien affiché + sélectionnable */}
             <div
               style={{
-                background: '#0A0A0F',
-                border: '1px solid #7C6AF740',
-                borderRadius: 8,
-                padding: '12px 14px',
-                fontFamily: 'monospace',
-                fontSize: 11,
-                color: '#7C6AF7',
-                wordBreak: 'break-all',
-                userSelect: 'all',
-                cursor: 'text',
-                marginBottom: 14,
+                background: '#0A0A0F', border: '1px solid #7C6AF740', borderRadius: 8,
+                padding: '12px 14px', fontFamily: 'monospace', fontSize: 11, color: '#7C6AF7',
+                wordBreak: 'break-all', userSelect: 'all', cursor: 'text', marginBottom: 14,
               }}
               onClick={e => {
                 const range = document.createRange()
@@ -365,23 +455,15 @@ export default function Admin() {
             >
               {stripeLink.url}
             </div>
-
             <div style={{ fontSize: 11, color: '#6B6880', marginBottom: 16, fontFamily: 'monospace' }}>
               💡 Clique sur le lien pour le sélectionner, puis Ctrl+C / Cmd+C pour copier
             </div>
-
             <div style={{ display: 'flex', gap: 8 }}>
-              <a
-                href={stripeLink.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ ...S.btnPrimary, textDecoration: 'none', flex: 1, textAlign: 'center' }}
-              >
+              <a href={stripeLink.url} target="_blank" rel="noopener noreferrer"
+                style={{ ...S.btnPrimary, textDecoration: 'none', flex: 1, textAlign: 'center' }}>
                 Ouvrir le lien ↗
               </a>
-              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setStripeLink(null)}>
-                Fermer
-              </button>
+              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setStripeLink(null)}>Fermer</button>
             </div>
           </div>
         </div>
@@ -425,6 +507,7 @@ const S = {
   btnGhost: { background: 'transparent', color: '#6B6880', border: '1px solid #ffffff1a', borderRadius: 6, padding: '8px 14px', cursor: 'pointer', fontSize: 13 },
   btnDanger: { background: '#F0525215', color: '#F05252', border: '1px solid #F0525230', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', fontSize: 12 },
   btnStripe: { background: '#7C6AF720', color: '#7C6AF7', border: '1px solid #7C6AF740', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 600 },
+  btnInvite: { background: '#5EE8B015', color: '#5EE8B0', border: '1px solid #5EE8B030', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 600 },
   btnSm: { padding: '5px 10px', fontSize: 12 },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { background: '#111118', border: '1px solid #ffffff1a', borderRadius: 12, padding: 28, width: 460, maxWidth: '95vw', display: 'flex', flexDirection: 'column', gap: 10 },
