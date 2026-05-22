@@ -23,4 +23,20 @@ export default async function handler(req, res) {
     .eq('is_active', true)
     .single()
 
-  if (!user) return res.status(401).json({ error: 'Email ou mot de passe incorrect.'
+  if (!user) return res.status(401).json({ error: 'Email ou mot de passe incorrect.' })
+  if (!user.invite_accepted) return res.status(401).json({ error: 'Compte non activé. Vérifie ton email.' })
+
+  const hash = hashPassword(password)
+  if (hash !== user.password_hash) return res.status(401).json({ error: 'Email ou mot de passe incorrect.' })
+
+  await supabase.from('users').update({
+    last_login: new Date().toISOString()
+  }).eq('id', user.id)
+
+  return res.status(200).json({
+    success: true,
+    redirect_id: user.redirect_id,
+    user_id: user.id,
+    email: user.email
+  })
+}
