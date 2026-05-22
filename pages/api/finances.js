@@ -1,20 +1,29 @@
-import { supabase } from '../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
 
 const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
 
 export default async function handler(req, res) {
-  const { data: clients } = await supabase.from('redirects').select('plan, active, created_at')
+  if (req.method !== 'GET') return res.status(405).end()
+
+  const { data: clients } = await supabase
+    .from('redirects')
+    .select('plan, active, created_at')
+
+  if (!clients) return res.status(200).json({ mrr: 0, arr: 0, total: 0 })
 
   const active = clients.filter(c => c.active)
   const mrr = active.reduce((acc, c) => acc + (PLAN_MRR[c.plan] || 0), 0)
   const arr = mrr * 12
 
-  // Nouveaux clients ce mois
   const thisMonth = new Date()
   thisMonth.setDate(1)
   const newThisMonth = clients.filter(c => new Date(c.created_at) >= thisMonth).length
 
-  // Répartition par plan
   const byPlan = {
     Starter: active.filter(c => c.plan === 'Starter').length,
     Business: active.filter(c => c.plan === 'Business').length,
