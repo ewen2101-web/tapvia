@@ -1,10 +1,15 @@
-import { supabase } from '../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     const { redirect_id } = req.query
     const { data } = await supabase.from('nfc_cards').select('*').eq('redirect_id', redirect_id)
-    return res.status(200).json(data)
+    return res.status(200).json(data || [])
   }
 
   if (req.method === 'POST') {
