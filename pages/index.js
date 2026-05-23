@@ -87,8 +87,9 @@ export default function Admin() {
 
   async function sendInvite(client) {
     if (!client.client_email) {
-      notify('Ce client n\'a pas d\'email. Modifie-le d\'abord.', 'error')
-      return
+      const email = prompt(`Email du client "${client.client_name}" :`)
+      if (!email) return
+      client = { ...client, client_email: email }
     }
     setInviteLoading(client.id)
     try {
