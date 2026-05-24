@@ -31,7 +31,7 @@ export default function Admin() {
   const [promoTarget, setPromoTarget] = useState(null)
   const [promoLoading, setPromoLoading] = useState(false)
   const [promoResult, setPromoResult] = useState(null)
-  const [promoForm, setPromoForm] = useState({ type: 'trial', value: 30, amount_off: '', expires_in_days: '' })
+  const [promoForm, setPromoForm] = useState({ type: 'trial', value: 30, trial_plan: 'Starter', amount_off: '', expires_in_days: '' })
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => {
@@ -91,6 +91,7 @@ export default function Admin() {
           client_name: client.client_name,
           type: promoForm.type,
           value: promoForm.type === 'trial' ? parseInt(promoForm.value) : parseInt(promoForm.value) || null,
+          trial_plan: promoForm.type === 'trial' ? promoForm.trial_plan : null,
           amount_off: promoForm.amount_off ? parseInt(promoForm.amount_off) : null,
           expires_in_days: promoForm.expires_in_days ? parseInt(promoForm.expires_in_days) : null,
         })
@@ -922,6 +923,21 @@ export default function Admin() {
 
                 {promoForm.type === 'trial' && (
                   <>
+                    <label style={S.formLabel}>Plan à tester</label>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                      {[
+                        { plan: 'Starter', price: '19€/mois', color: '#6B6880' },
+                        { plan: 'Business', price: '39€/mois', color: '#7C6AF7' },
+                        { plan: 'Pro', price: '69€/mois', color: '#5EE8B0' },
+                      ].map(({ plan, price, color }) => (
+                        <button key={plan} onClick={() => setPromoForm(f => ({ ...f, trial_plan: plan }))}
+                          style={{ ...S.btnGhost, ...S.btnSm, flex: 1,
+                            ...(promoForm.trial_plan === plan ? { background: `${color}20`, color, borderColor: color } : {}) }}>
+                          <div style={{ fontWeight: 700 }}>{plan}</div>
+                          <div style={{ fontSize: 10, opacity: 0.7 }}>{price}</div>
+                        </button>
+                      ))}
+                    </div>
                     <label style={S.formLabel}>Durée de l'essai</label>
                     <div style={{ display: 'flex', gap: 6 }}>
                       {[7, 14, 30].map(d => (
@@ -931,8 +947,8 @@ export default function Admin() {
                         </button>
                       ))}
                     </div>
-                    <div style={{ fontSize: 12, color: '#6B6880', marginTop: 8, fontFamily: 'monospace' }}>
-                      Le client aura accès au service gratuitement pendant {promoForm.value} jours.
+                    <div style={{ fontSize: 12, color: '#6B6880', marginTop: 8, fontFamily: 'monospace', background: '#1A1A24', padding: '8px 12px', borderRadius: 6 }}>
+                      Le client aura accès au plan <strong style={{ color: promoForm.trial_plan === 'Pro' ? '#5EE8B0' : promoForm.trial_plan === 'Business' ? '#7C6AF7' : '#6B6880' }}>{promoForm.trial_plan}</strong> gratuitement pendant <strong>{promoForm.value} jours</strong>.
                     </div>
                   </>
                 )}
@@ -973,7 +989,8 @@ export default function Admin() {
 
                   {promoResult.type === 'trial' && (
                     <div style={{ fontSize: 13, color: '#F0EEF8', lineHeight: 1.8 }}>
-                      <div>🎁 <strong>{promoResult.value} jours d'essai gratuit</strong></div>
+                      <div>🎁 <strong>{promoResult.value} jours d&apos;essai gratuit</strong></div>
+                      <div style={{ fontSize: 12, color: '#7C6AF7', marginTop: 4 }}>Plan : <strong>{promoResult.trial_plan || 'Starter'}</strong></div>
                       <div style={{ fontSize: 11, color: '#6B6880', marginTop: 4 }}>
                         Expire le {new Date(promoResult.expires_at).toLocaleDateString('fr-FR')}
                       </div>
