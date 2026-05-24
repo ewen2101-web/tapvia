@@ -835,7 +835,7 @@ export default function Admin() {
                   <div key={c.id} style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', border: promoTarget?.id === c.id ? '1px solid #7C6AF7' : '1px solid transparent' }}
                     onClick={() => { setPromoTarget(c); setPromoResult(null); setPromoModal(true) }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{c.client_name}</div>
-                    <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 2 }}>{c.plan} · {c.client_email || 'Pas d'email'}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 2 }}>{c.plan} · {c.client_email || 'Pas d\'email'}</div>
                   </div>
                 ))}
                 {clients.length === 0 && <div style={S.empty}>Aucun client.</div>}
