@@ -26,6 +26,12 @@ export default function Admin() {
   const [negativeAlerts, setNegativeAlerts] = useState([])
   const [inactiveClients, setInactiveClients] = useState([])
   const [inactiveDays, setInactiveDays] = useState(14)
+  const [promos, setPromos] = useState([])
+  const [promoModal, setPromoModal] = useState(false)
+  const [promoTarget, setPromoTarget] = useState(null)
+  const [promoLoading, setPromoLoading] = useState(false)
+  const [promoResult, setPromoResult] = useState(null)
+  const [promoForm, setPromoForm] = useState({ type: 'trial', value: 30, amount_off: '', expires_in_days: '' })
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => {
@@ -33,11 +39,13 @@ export default function Admin() {
       fetchClients()
       fetchFinances()
       fetchNegativeAlerts()
+      fetchPromos()
     }
   }, [auth])
 
   useEffect(() => {
     if (auth && activeSection === 'inactive') fetchInactiveClients()
+    if (auth && activeSection === 'promos') fetchPromos()
   }, [activeSection, inactiveDays])
 
   function notify(msg, type = 'success') {
@@ -63,6 +71,47 @@ export default function Admin() {
     const res = await fetch('/api/negative-alerts')
     const data = await res.json()
     setNegativeAlerts(Array.isArray(data) ? data : [])
+  }
+
+  async function fetchPromos() {
+    const res = await fetch('/api/promos')
+    const data = await res.json()
+    setPromos(Array.isArray(data) ? data : [])
+  }
+
+  async function createPromo(client) {
+    setPromoLoading(true)
+    setPromoResult(null)
+    try {
+      const res = await fetch('/api/promos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          redirect_id: client.id,
+          client_name: client.client_name,
+          type: promoForm.type,
+          value: promoForm.type === 'trial' ? parseInt(promoForm.value) : parseInt(promoForm.value) || null,
+          amount_off: promoForm.amount_off ? parseInt(promoForm.amount_off) : null,
+          expires_in_days: promoForm.expires_in_days ? parseInt(promoForm.expires_in_days) : null,
+        })
+      })
+      const data = await res.json()
+      if (data.error) { notify(data.error, 'error'); setPromoLoading(false); return }
+      setPromoResult(data)
+      fetchPromos()
+      notify('Promo créée ✓')
+    } catch (e) { notify('Erreur réseau', 'error') }
+    setPromoLoading(false)
+  }
+
+  async function updatePromoStatus(id, status) {
+    await fetch('/api/promos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status })
+    })
+    fetchPromos()
+    notify('Promo mise à jour ✓')
   }
 
   async function fetchInactiveClients() {
@@ -276,6 +325,7 @@ export default function Admin() {
             { id: 'finances', label: '💰 Finances' },
             { id: 'alerts', label: `🚨 Alertes${unreadAlerts > 0 ? ` (${unreadAlerts})` : ''}` },
             { id: 'inactive', label: '💤 Inactifs' },
+            { id: 'promos', label: '🎁 Promos' },
           ].map(item => (
             <div key={item.id} style={{ ...S.navItem, ...(activeSection === item.id || (activeSection === 'client-detail' && item.id === 'clients') ? S.navActive : {}) }}
               onClick={() => setActiveSection(item.id)}>
@@ -765,6 +815,194 @@ export default function Admin() {
           </>
         )}
       </main>
+
+      {/* ===== PROMOS ===== */}
+      {activeSection === 'promos' && (
+        <>
+          <div style={S.topbar}>
+            <div>
+              <div style={S.topbarTitle}>🎁 Promos & Coupons</div>
+              <div style={S.topbarSub}>{promos.length} promo{promos.length > 1 ? 's' : ''} créée{promos.length > 1 ? 's' : ''}</div>
+            </div>
+            <button style={S.btnPrimary} onClick={() => { setPromoTarget(null); setPromoResult(null); setPromoModal(true) }}>+ Nouvelle promo</button>
+          </div>
+          <div style={S.content}>
+            {/* Sélecteur client rapide */}
+            <div style={S.card}>
+              <div style={S.cardTitle}>Créer une promo pour un client</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                {clients.map(c => (
+                  <div key={c.id} style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', border: promoTarget?.id === c.id ? '1px solid #7C6AF7' : '1px solid transparent' }}
+                    onClick={() => { setPromoTarget(c); setPromoResult(null); setPromoModal(true) }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{c.client_name}</div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 2 }}>{c.plan} · {c.client_email || 'Pas d'email'}</div>
+                  </div>
+                ))}
+                {clients.length === 0 && <div style={S.empty}>Aucun client.</div>}
+              </div>
+            </div>
+
+            {/* Liste des promos */}
+            <div style={S.card}>
+              <div style={S.cardTitle}>Historique des promos</div>
+              {promos.length === 0 ? (
+                <div style={S.empty}>Aucune promo créée.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {promos.map(promo => (
+                    <div key={promo.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#1A1A24', borderRadius: 8, border: `1px solid ${promo.status === 'active' ? '#7C6AF730' : '#ffffff08'}` }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>{promo.client_name}</div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#6B6880', marginTop: 3 }}>
+                          {promo.type === 'trial'
+                            ? `🎁 Essai gratuit ${promo.value} jours`
+                            : promo.value
+                            ? `💸 -${promo.value}% de réduction`
+                            : `💸 -${promo.amount_off}€ de réduction`}
+                          {promo.code && <span style={{ marginLeft: 8, background: '#7C6AF720', color: '#7C6AF7', padding: '1px 6px', borderRadius: 4 }}>Code: {promo.code}</span>}
+                        </div>
+                        {promo.expires_at && (
+                          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 2 }}>
+                            Expire le {new Date(promo.expires_at).toLocaleDateString('fr-FR')}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 10, padding: '3px 8px', borderRadius: 4, background: promo.status === 'active' ? '#5EE8B020' : '#F0525215', color: promo.status === 'active' ? '#5EE8B0' : '#F05252' }}>
+                          {promo.status === 'active' ? '✓ Active' : '✕ Inactive'}
+                        </span>
+                        {promo.status === 'active' ? (
+                          <button style={{ ...S.btnDanger, ...S.btnSm }} onClick={() => updatePromoStatus(promo.id, 'expired')}>Désactiver</button>
+                        ) : (
+                          <button style={{ ...S.btnGhost, ...S.btnSm }} onClick={() => updatePromoStatus(promo.id, 'active')}>Réactiver</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal création promo */}
+      {promoModal && (
+        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setPromoModal(false)}>
+          <div style={S.modal}>
+            <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>🎁</div>
+            <div style={S.modalTitle}>
+              {promoTarget ? `Promo pour ${promoTarget.client_name}` : 'Nouvelle promo'}
+            </div>
+
+            {!promoTarget && (
+              <>
+                <label style={S.formLabel}>Client</label>
+                <select style={S.input} onChange={e => setPromoTarget(clients.find(c => c.id === e.target.value))}>
+                  <option value="">Sélectionne un client</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.client_name}</option>)}
+                </select>
+              </>
+            )}
+
+            {!promoResult ? (
+              <>
+                <label style={S.formLabel}>Type de promo</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+                  {[
+                    { id: 'trial', label: '🎁 Essai gratuit' },
+                    { id: 'discount', label: '💸 Réduction' },
+                  ].map(t => (
+                    <button key={t.id} onClick={() => setPromoForm(f => ({ ...f, type: t.id }))}
+                      style={{ ...S.btnGhost, flex: 1, ...(promoForm.type === t.id ? { background: '#7C6AF720', color: '#7C6AF7', borderColor: '#7C6AF7' } : {}) }}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {promoForm.type === 'trial' && (
+                  <>
+                    <label style={S.formLabel}>Durée de l'essai</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {[7, 14, 30].map(d => (
+                        <button key={d} onClick={() => setPromoForm(f => ({ ...f, value: d }))}
+                          style={{ ...S.btnGhost, ...S.btnSm, flex: 1, ...(promoForm.value === d ? { background: '#7C6AF720', color: '#7C6AF7', borderColor: '#7C6AF7' } : {}) }}>
+                          {d} jours
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6B6880', marginTop: 8, fontFamily: 'monospace' }}>
+                      Le client aura accès au service gratuitement pendant {promoForm.value} jours.
+                    </div>
+                  </>
+                )}
+
+                {promoForm.type === 'discount' && (
+                  <>
+                    <label style={S.formLabel}>Réduction en % (ex: 50 = 50%)</label>
+                    <input style={S.input} type="number" placeholder="ex: 50" min="1" max="100"
+                      value={promoForm.value} onChange={e => setPromoForm(f => ({ ...f, value: e.target.value, amount_off: '' }))} />
+                    <div style={{ textAlign: 'center', color: '#6B6880', fontSize: 12, margin: '4px 0' }}>— ou —</div>
+                    <label style={S.formLabel}>Réduction en € (ex: 10 = 10€ de réduction)</label>
+                    <input style={S.input} type="number" placeholder="ex: 10" min="1"
+                      value={promoForm.amount_off} onChange={e => setPromoForm(f => ({ ...f, amount_off: e.target.value, value: '' }))} />
+                    <label style={S.formLabel}>Expire dans (jours) — optionnel</label>
+                    <input style={S.input} type="number" placeholder="ex: 30" min="1"
+                      value={promoForm.expires_in_days} onChange={e => setPromoForm(f => ({ ...f, expires_in_days: e.target.value }))} />
+                    <div style={{ fontSize: 12, color: '#6B6880', marginTop: 4, fontFamily: 'monospace' }}>
+                      Un code promo unique sera généré et utilisable une seule fois.
+                    </div>
+                  </>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                  <button style={S.btnGhost} onClick={() => setPromoModal(false)}>Annuler</button>
+                  <button style={{ ...S.btnPrimary, flex: 1, opacity: promoLoading ? 0.6 : 1 }}
+                    onClick={() => promoTarget && createPromo(promoTarget)}
+                    disabled={promoLoading || !promoTarget}>
+                    {promoLoading ? 'Création...' : 'Créer la promo →'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Résultat de la promo créée */}
+                <div style={{ background: '#5EE8B010', border: '1px solid #5EE8B030', borderRadius: 8, padding: 16, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>✅</div>
+                  <div style={{ fontWeight: 700, color: '#5EE8B0', marginBottom: 12 }}>Promo créée avec succès !</div>
+
+                  {promoResult.type === 'trial' && (
+                    <div style={{ fontSize: 13, color: '#F0EEF8', lineHeight: 1.8 }}>
+                      <div>🎁 <strong>{promoResult.value} jours d'essai gratuit</strong></div>
+                      <div style={{ fontSize: 11, color: '#6B6880', marginTop: 4 }}>
+                        Expire le {new Date(promoResult.expires_at).toLocaleDateString('fr-FR')}
+                      </div>
+                    </div>
+                  )}
+
+                  {promoResult.type === 'discount' && promoResult.code && (
+                    <div>
+                      <div style={{ fontSize: 13, color: '#F0EEF8', marginBottom: 10 }}>
+                        {promoResult.value ? `💸 -${promoResult.value}% de réduction` : `💸 -${promoResult.amount_off}€ de réduction`}
+                      </div>
+                      <div style={{ background: '#0A0A0F', border: '1px solid #7C6AF740', borderRadius: 8, padding: '12px', fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: '#7C6AF7', letterSpacing: 2, userSelect: 'all', cursor: 'text' }}>
+                        {promoResult.code}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6B6880', marginTop: 8 }}>
+                        Envoie ce code au client — il le saisit lors du paiement Stripe
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button style={{ ...S.btnPrimary, marginTop: 12 }} onClick={() => { setPromoModal(false); setPromoResult(null); setPromoTarget(null) }}>
+                  Fermer
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal nouveau/modifier client */}
       {modal && (
