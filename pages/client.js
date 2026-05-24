@@ -7,9 +7,12 @@ export default function ClientDashboard() {
   const [stats, setStats] = useState(null)
   const [reviews, setReviews] = useState(null)
   const [competitors, setCompetitors] = useState(null)
+  const [ratingHistory, setRatingHistory] = useState(null)
+  const [localRanking, setLocalRanking] = useState(null)
   const [loading, setLoading] = useState(true)
   const [reviewsLoading, setReviewsLoading] = useState(false)
   const [competitorsLoading, setCompetitorsLoading] = useState(false)
+  const [rankingLoading, setRankingLoading] = useState(false)
   const [period, setPeriod] = useState(30)
   const [redirectId, setRedirectId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
@@ -20,6 +23,7 @@ export default function ClientDashboard() {
     if (!id) { router.push('/login'); return }
     setRedirectId(id)
     fetchStats(id, period)
+    fetchRatingHistory(id)
   }, [])
 
   useEffect(() => {
@@ -27,8 +31,10 @@ export default function ClientDashboard() {
   }, [period])
 
   useEffect(() => {
-    if (redirectId && activeTab === 'reviews' && !reviews) fetchReviews(redirectId)
-    if (redirectId && activeTab === 'competitors' && !competitors) fetchCompetitors(redirectId)
+    if (!redirectId) return
+    if (activeTab === 'reviews' && !reviews) fetchReviews(redirectId)
+    if (activeTab === 'competitors' && !competitors) fetchCompetitors(redirectId)
+    if (activeTab === 'ranking' && !localRanking) fetchLocalRanking(redirectId)
   }, [activeTab])
 
   async function fetchStats(id, days) {
@@ -39,22 +45,47 @@ export default function ClientDashboard() {
     setLoading(false)
   }
 
+  async function fetchRatingHistory(id) {
+    const res = await fetch(`/api/rating-history?redirect_id=${id}`)
+    const data = await res.json()
+    setRatingHistory(Array.isArray(data) ? data : [])
+  }
+
   async function fetchReviews(id) {
     setReviewsLoading(true)
     const res = await fetch(`/api/google-reviews?redirect_id=${id}`)
     const data = await res.json()
     setReviews(data)
+    // Enregistre la note dans l'historique automatiquement
+    if (data.rating) {
+      await fetch('/api/rating-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_id: id, rating: data.rating, total_reviews: data.total_reviews })
+      })
+      fetchRatingHistory(id)
+    }
     setReviewsLoading(false)
   }
 
   async function fetchCompetitors(id) {
     setCompetitorsLoading(true)
     const placeId = stats?.client?.google_place_id
-    if (!placeId) { setCompetitors({ error: 'Place ID Google non configuré pour ce client.' }); setCompetitorsLoading(false); return }
+    if (!placeId) { setCompetitors({ error: 'Place ID non configuré.' }); setCompetitorsLoading(false); return }
     const res = await fetch(`/api/competitors?place_id=${placeId}`)
     const data = await res.json()
     setCompetitors(data)
     setCompetitorsLoading(false)
+  }
+
+  async function fetchLocalRanking(id) {
+    setRankingLoading(true)
+    const placeId = stats?.client?.google_place_id
+    if (!placeId) { setLocalRanking({ error: 'Place ID non configuré.' }); setRankingLoading(false); return }
+    const res = await fetch(`/api/local-ranking?place_id=${placeId}`)
+    const data = await res.json()
+    setLocalRanking(data)
+    setRankingLoading(false)
   }
 
   function exportPDF() {
@@ -66,21 +97,17 @@ export default function ClientDashboard() {
     router.push('/login')
   }
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#0A0A0F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 13 }}>
-        Chargement de votre dashboard...
-      </div>
-    )
-  }
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#0A0A0F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 13 }}>
+      Chargement de votre dashboard...
+    </div>
+  )
 
-  if (!stats || !stats.client) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#0A0A0F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 13 }}>
-        Erreur. <span onClick={() => router.push('/login')} style={{ color: '#7C6AF7', cursor: 'pointer', marginLeft: 6 }}>Reconnecte-toi →</span>
-      </div>
-    )
-  }
+  if (!stats?.client) return (
+    <div style={{ minHeight: '100vh', background: '#0A0A0F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6B6880', fontFamily: 'monospace', fontSize: 13 }}>
+      Erreur. <span onClick={() => router.push('/login')} style={{ color: '#7C6AF7', cursor: 'pointer', marginLeft: 6 }}>Reconnecte-toi →</span>
+    </div>
+  )
 
   const conversionRate = stats.totalScans > 0 ? Math.round((stats.totalReviews / stats.totalScans) * 100) : 0
   const estimatedViews = (stats.totalScans || 0) * 8
@@ -88,6 +115,18 @@ export default function ClientDashboard() {
   const chartDays = Object.keys(chartData).slice(-14)
   const chartMax = Math.max(...Object.values(chartData), 1)
   const negativeReviews = (reviews?.reviews || []).filter(r => r.rating <= 2)
+  const monthlyGoal = stats.client.monthly_goal || 50
+  const goalProgress = Math.min(Math.round(((stats.totalReviews || 0) / monthlyGoal) * 100), 100)
+
+  // Calcul évolution note
+  const historyData = ratingHistory || []
+  const ratingEvolution = historyData.length >= 2
+    ? (historyData[historyData.length - 1].rating - historyData[0].rating).toFixed(1)
+    : null
+  const historyMax = Math.max(...historyData.map(h => h.rating), 5)
+  const historyMin = Math.max(Math.min(...historyData.map(h => h.rating), 3) - 0.5, 0)
+
+  const monthNames = { '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr', '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Aoû', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Déc' }
 
   return (
     <div style={S.page}>
@@ -98,12 +137,10 @@ export default function ClientDashboard() {
         <div style={S.alertBanner}>
           <div style={S.alertBannerContent}>
             <span style={{ fontSize: 18 }}>⚠️</span>
-            <div>
-              <strong>{negativeReviews.length} avis négatif{negativeReviews.length > 1 ? 's' : ''}</strong> récent{negativeReviews.length > 1 ? 's' : ''} détecté{negativeReviews.length > 1 ? 's' : ''} — note {negativeReviews.map(r => r.rating + '★').join(', ')}
+            <div style={{ fontSize: 13 }}>
+              <strong>{negativeReviews.length} avis négatif{negativeReviews.length > 1 ? 's' : ''}</strong> récent{negativeReviews.length > 1 ? 's' : ''} — {negativeReviews.map(r => r.rating + '★').join(', ')}
             </div>
-            <button style={S.alertBannerBtn} onClick={() => { setActiveTab('reviews'); setAlertsShown(true) }}>
-              Voir les avis →
-            </button>
+            <button style={S.alertBannerBtn} onClick={() => { setActiveTab('reviews'); setAlertsShown(true) }}>Voir →</button>
             <button style={S.alertBannerClose} onClick={() => setAlertsShown(true)}>✕</button>
           </div>
         </div>
@@ -118,7 +155,7 @@ export default function ClientDashboard() {
         </div>
         <div style={S.headerRight}>
           <span style={S.planBadge}>{stats.client.plan || 'Starter'}</span>
-          <button style={S.exportBtn} onClick={exportPDF} title="Exporter le rapport PDF">📄 Rapport PDF</button>
+          <button style={S.exportBtn} onClick={exportPDF}>📄 Rapport PDF</button>
           <button style={S.logoutBtn} onClick={logout}>Déconnexion</button>
         </div>
       </header>
@@ -129,10 +166,9 @@ export default function ClientDashboard() {
           { id: 'overview', label: '📊 Vue d\'ensemble' },
           { id: 'reviews', label: `⭐ Avis Google${negativeReviews.length > 0 ? ` (${negativeReviews.length} ⚠️)` : ''}` },
           { id: 'competitors', label: '🏆 Concurrents' },
+          { id: 'ranking', label: '📍 Classement local' },
         ].map(tab => (
-          <button key={tab.id}
-            style={{ ...S.tab, ...(activeTab === tab.id ? S.tabActive : {}) }}
-            onClick={() => setActiveTab(tab.id)}>
+          <button key={tab.id} style={{ ...S.tab, ...(activeTab === tab.id ? S.tabActive : {}) }} onClick={() => setActiveTab(tab.id)}>
             {tab.label}
           </button>
         ))}
@@ -147,38 +183,135 @@ export default function ClientDashboard() {
               <div style={S.periodLabel}>Période :</div>
               <div style={S.periodSelector}>
                 {[7, 30, 90].map(d => (
-                  <button key={d} style={{ ...S.periodBtn, ...(period === d ? S.periodActive : {}) }} onClick={() => setPeriod(d)}>
-                    {d} jours
-                  </button>
+                  <button key={d} style={{ ...S.periodBtn, ...(period === d ? S.periodActive : {}) }} onClick={() => setPeriod(d)}>{d} jours</button>
                 ))}
               </div>
             </div>
 
+            {/* Métriques */}
             <div style={S.metrics}>
-              <div style={S.metricCard}>
-                <div style={S.metricLabel}>Scans NFC</div>
-                <div style={{ ...S.metricValue, color: '#7C6AF7' }}>{stats.totalScans || 0}</div>
-                <div style={{ ...S.metricDelta, color: (stats.delta || 0) >= 0 ? '#5EE8B0' : '#F05252' }}>
-                  {(stats.delta || 0) >= 0 ? '↑' : '↓'} {Math.abs(stats.delta || 0)}% vs période précédente
+              {[
+                { label: 'Scans NFC', value: stats.totalScans || 0, color: '#7C6AF7', delta: `${(stats.delta || 0) >= 0 ? '↑' : '↓'} ${Math.abs(stats.delta || 0)}% vs période préc.`, deltaColor: (stats.delta || 0) >= 0 ? '#5EE8B0' : '#F05252' },
+                { label: 'Note Google', value: stats.avgRating > 0 ? `${stats.avgRating}★` : '—', color: '#F0A050', sub: 'Note moyenne actuelle' },
+                { label: 'Avis reçus', value: stats.totalReviews || 0, color: '#5EE8B0', sub: 'Total sur Google' },
+                { label: 'Visibilité estimée', value: `+${estimatedViews.toLocaleString('fr')}`, color: '#7C6AF7', sub: 'vues Google estimées' },
+              ].map((m, i) => (
+                <div key={i} style={S.metricCard}>
+                  <div style={S.metricLabel}>{m.label}</div>
+                  <div style={{ ...S.metricValue, color: m.color }}>{m.value}</div>
+                  {m.delta && <div style={{ fontSize: 11, fontFamily: 'monospace', marginTop: 6, color: m.deltaColor }}>{m.delta}</div>}
+                  {m.sub && <div style={S.metricSub}>{m.sub}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Objectif mensuel */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={S.cardTitle}>🎯 Objectif mensuel d'avis</div>
+                <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#6B6880' }}>
+                  {stats.totalReviews || 0} / {monthlyGoal} avis
                 </div>
               </div>
-              <div style={S.metricCard}>
-                <div style={S.metricLabel}>Note Google</div>
-                <div style={{ ...S.metricValue, color: '#F0A050' }}>{stats.avgRating > 0 ? `${stats.avgRating}★` : '—'}</div>
-                <div style={S.metricSub}>Note moyenne actuelle</div>
+
+              {/* Barre de progression */}
+              <div style={{ height: 12, background: '#1A1A24', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${goalProgress}%`,
+                  background: goalProgress >= 100 ? '#5EE8B0' : goalProgress >= 70 ? '#7C6AF7' : goalProgress >= 40 ? '#F0A050' : '#F05252',
+                  borderRadius: 8,
+                  transition: 'width 0.5s ease',
+                }} />
               </div>
-              <div style={S.metricCard}>
-                <div style={S.metricLabel}>Avis reçus</div>
-                <div style={{ ...S.metricValue, color: '#5EE8B0' }}>{stats.totalReviews || 0}</div>
-                <div style={S.metricSub}>Total sur Google</div>
-              </div>
-              <div style={S.metricCard}>
-                <div style={S.metricLabel}>Visibilité estimée</div>
-                <div style={{ ...S.metricValue, color: '#7C6AF7' }}>+{estimatedViews.toLocaleString('fr')}</div>
-                <div style={S.metricSub}>vues Google estimées</div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: '#6B6880' }}>
+                  {goalProgress >= 100
+                    ? '🎉 Objectif atteint ! Excellent travail !'
+                    : goalProgress >= 70
+                    ? `💪 Encore ${monthlyGoal - (stats.totalReviews || 0)} avis pour atteindre l'objectif`
+                    : goalProgress >= 40
+                    ? `📈 Continuez, vous êtes à ${goalProgress}% de l'objectif`
+                    : `🚀 Démarrage — ${monthlyGoal - (stats.totalReviews || 0)} avis restants`}
+                </div>
+                <div style={{
+                  fontSize: 22, fontWeight: 800,
+                  color: goalProgress >= 100 ? '#5EE8B0' : goalProgress >= 70 ? '#7C6AF7' : '#F0A050'
+                }}>
+                  {goalProgress}%
+                </div>
               </div>
             </div>
 
+            {/* Évolution note Google */}
+            <div style={S.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={S.cardTitle}>📈 Évolution de votre note Google</div>
+                {ratingEvolution !== null && (
+                  <div style={{
+                    fontFamily: 'monospace', fontSize: 13, fontWeight: 700,
+                    color: parseFloat(ratingEvolution) >= 0 ? '#5EE8B0' : '#F05252'
+                  }}>
+                    {parseFloat(ratingEvolution) >= 0 ? '↑' : '↓'} {Math.abs(ratingEvolution)}★ depuis le début
+                  </div>
+                )}
+              </div>
+
+              {historyData.length === 0 ? (
+                <div style={S.empty}>
+                  Pas encore d'historique. Les données s'accumulent automatiquement chaque mois.<br />
+                  <span style={{ fontSize: 11, color: '#6B6880' }}>Ouvre l'onglet "Avis Google" pour enregistrer la note actuelle.</span>
+                </div>
+              ) : historyData.length === 1 ? (
+                <div style={{ textAlign: 'center', padding: 20 }}>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: '#F0A050' }}>{historyData[0].rating}★</div>
+                  <div style={{ fontSize: 12, color: '#6B6880', marginTop: 8 }}>Note actuelle — L'évolution apparaîtra le mois prochain</div>
+                </div>
+              ) : (
+                <>
+                  {/* Graphique ligne */}
+                  <div style={{ position: 'relative', height: 140, marginBottom: 8 }}>
+                    <svg width="100%" height="140" viewBox={`0 0 ${historyData.length * 80} 140`} preserveAspectRatio="none">
+                      {/* Ligne de la note */}
+                      <polyline
+                        points={historyData.map((h, i) => {
+                          const x = (i / (historyData.length - 1)) * (historyData.length * 80)
+                          const y = 120 - ((h.rating - historyMin) / (historyMax - historyMin)) * 100
+                          return `${x},${y}`
+                        }).join(' ')}
+                        fill="none"
+                        stroke="#7C6AF7"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {/* Points */}
+                      {historyData.map((h, i) => {
+                        const x = (i / (historyData.length - 1)) * (historyData.length * 80)
+                        const y = 120 - ((h.rating - historyMin) / (historyMax - historyMin)) * 100
+                        return (
+                          <g key={i}>
+                            <circle cx={x} cy={y} r="5" fill="#7C6AF7" />
+                            <text x={x} y={y - 12} textAnchor="middle" fill="#F0EEF8" fontSize="11" fontWeight="700">{h.rating}★</text>
+                          </g>
+                        )
+                      })}
+                    </svg>
+                  </div>
+                  {/* Labels mois */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>
+                    {historyData.map((h, i) => (
+                      <div key={i} style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', textAlign: 'center' }}>
+                        {monthNames[h.month?.slice(5, 7)] || h.month}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Graphique scans */}
             <div style={S.card}>
               <div style={S.cardTitle}>Scans par jour — {period} derniers jours</div>
               {chartDays.length === 0 ? (
@@ -240,25 +373,20 @@ export default function ClientDashboard() {
             {reviewsLoading ? (
               <div style={S.empty}>Chargement des avis Google...</div>
             ) : reviews?.error ? (
-              <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>
-                ⚠️ {reviews.error} — Configure le Place ID Google dans le dashboard admin.
-              </div>
+              <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>⚠️ {reviews.error}</div>
             ) : (
               <>
-                {/* Résumé note */}
                 <div style={{ ...S.card, marginBottom: 16 }}>
                   <div style={S.cardTitle}>Résumé Google Reviews</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                     <div>
-                      <div style={{ fontSize: 48, fontWeight: 800, color: '#F0A050', letterSpacing: -2 }}>
-                        {reviews?.rating || '—'}
-                      </div>
+                      <div style={{ fontSize: 48, fontWeight: 800, color: '#F0A050', letterSpacing: -2 }}>{reviews?.rating || '—'}</div>
                       <div style={{ color: '#F0A050', fontSize: 20, marginTop: 4 }}>
                         {'★'.repeat(Math.round(reviews?.rating || 0))}{'☆'.repeat(5 - Math.round(reviews?.rating || 0))}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#F0EEF8' }}>{reviews?.total_reviews || 0} avis au total</div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{reviews?.total_reviews || 0} avis au total</div>
                       <div style={{ fontSize: 12, color: '#6B6880', marginTop: 4 }}>
                         {negativeReviews.length > 0
                           ? <span style={{ color: '#F05252' }}>⚠️ {negativeReviews.length} avis négatif{negativeReviews.length > 1 ? 's' : ''} récent{negativeReviews.length > 1 ? 's' : ''}</span>
@@ -268,45 +396,40 @@ export default function ClientDashboard() {
                   </div>
                 </div>
 
-                {/* Liste des avis */}
                 <div style={S.cardTitle}>5 derniers avis</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-                  {(reviews?.reviews || []).length === 0 ? (
-                    <div style={S.empty}>Aucun avis disponible.</div>
-                  ) : (
-                    (reviews?.reviews || []).map((review, i) => (
-                      <div key={i} style={{
-                        ...S.card,
-                        borderLeft: review.rating <= 2 ? '3px solid #F05252' : review.rating >= 5 ? '3px solid #5EE8B0' : '3px solid #7C6AF7',
-                        background: review.rating <= 2 ? '#F0525208' : '#111118',
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            {review.profile_photo && (
-                              <img src={review.profile_photo} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                            )}
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: 13 }}>{review.author}</div>
-                              <div style={{ fontSize: 11, color: '#6B6880' }}>{review.relative_time}</div>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <div style={{ color: '#F0A050', fontSize: 14 }}>
-                              {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
-                            </div>
-                            {review.rating <= 2 && (
-                              <span style={{ background: '#F0525220', color: '#F05252', fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
-                                ⚠️ Négatif
-                              </span>
-                            )}
+                  {(reviews?.reviews || []).map((review, i) => (
+                    <div key={i} style={{
+                      ...S.card,
+                      borderLeft: review.rating <= 2 ? '3px solid #F05252' : review.rating >= 5 ? '3px solid #5EE8B0' : '3px solid #7C6AF7',
+                      background: review.rating <= 2 ? '#F0525208' : '#111118',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {review.profile_photo && <img src={review.profile_photo} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />}
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>{review.author}</div>
+                            <div style={{ fontSize: 11, color: '#6B6880' }}>{review.relative_time}</div>
                           </div>
                         </div>
-                        <div style={{ fontSize: 13, color: '#C8C4D8', lineHeight: 1.6 }}>
-                          {review.text || <span style={{ color: '#6B6880', fontStyle: 'italic' }}>Pas de commentaire</span>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ color: '#F0A050', fontSize: 14 }}>{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</div>
+                          {review.rating <= 2 && <span style={{ background: '#F0525220', color: '#F05252', fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>⚠️ Négatif</span>}
                         </div>
                       </div>
-                    ))
-                  )}
+                      <div style={{ fontSize: 13, color: '#C8C4D8', lineHeight: 1.6 }}>
+                        {review.text || <span style={{ color: '#6B6880', fontStyle: 'italic' }}>Pas de commentaire</span>}
+                      </div>
+                      <a
+                        href={`https://search.google.com/local/writereview?placeid=${stats.client.google_place_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ display: 'inline-block', marginTop: 10, fontSize: 11, color: '#7C6AF7', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        Répondre sur Google ↗
+                      </a>
+                    </div>
+                  ))}
                 </div>
               </>
             )}
@@ -319,70 +442,111 @@ export default function ClientDashboard() {
             {competitorsLoading ? (
               <div style={S.empty}>Recherche des concurrents proches...</div>
             ) : competitors?.error ? (
-              <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>
-                ⚠️ {competitors.error}
-              </div>
+              <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>⚠️ {competitors.error}</div>
             ) : (
-              <>
-                <div style={{ ...S.card, marginBottom: 16 }}>
-                  <div style={S.cardTitle}>Votre position vs la concurrence locale</div>
-                  <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 16 }}>
-                    Comparaison avec les établissements similaires dans un rayon de 500m
-                  </div>
+              <div style={S.card}>
+                <div style={S.cardTitle}>Comparaison locale — rayon 500m</div>
+                <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 16 }}>Établissements similaires dans votre zone</div>
 
-                  {/* Ton établissement */}
-                  <div style={{ background: '#7C6AF720', border: '1px solid #7C6AF740', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }}>
+                <div style={{ background: '#7C6AF720', border: '1px solid #7C6AF740', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#7C6AF7' }}>⭐ {competitors?.main?.name} <span style={{ fontSize: 11, fontWeight: 400 }}>(vous)</span></div>
+                    <div style={{ display: 'flex', gap: 20 }}>
+                      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: '#F0A050' }}>{competitors?.main?.rating || '—'}★</div><div style={{ fontSize: 10, color: '#6B6880' }}>Note</div></div>
+                      <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: '#5EE8B0' }}>{competitors?.main?.total_reviews || 0}</div><div style={{ fontSize: 10, color: '#6B6880' }}>Avis</div></div>
+                    </div>
+                  </div>
+                </div>
+
+                {(competitors?.competitors || []).map((c, i) => (
+                  <div key={i} style={{ background: '#111118', border: '1px solid #ffffff0f', borderRadius: 8, padding: '14px 16px', marginBottom: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: '#7C6AF7' }}>
-                          ⭐ {competitors?.main?.name} <span style={{ fontSize: 11, color: '#7C6AF7', fontWeight: 400 }}>(vous)</span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 20, fontWeight: 800, color: '#F0A050' }}>{competitors?.main?.rating || '—'}★</div>
-                          <div style={{ fontSize: 10, color: '#6B6880' }}>Note</div>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 20, fontWeight: 800, color: '#5EE8B0' }}>{competitors?.main?.total_reviews || 0}</div>
-                          <div style={{ fontSize: 10, color: '#6B6880' }}>Avis</div>
-                        </div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>#{i + 1} {c.name}</div>
+                      <div style={{ display: 'flex', gap: 20 }}>
+                        <div style={{ textAlign: 'center' }}><div style={{ fontSize: 18, fontWeight: 800, color: c.rating > (competitors?.main?.rating || 0) ? '#F05252' : '#5EE8B0' }}>{c.rating || '—'}★</div><div style={{ fontSize: 10, color: '#6B6880' }}>Note</div></div>
+                        <div style={{ textAlign: 'center' }}><div style={{ fontSize: 18, fontWeight: 800, color: c.total_reviews > (competitors?.main?.total_reviews || 0) ? '#F05252' : '#5EE8B0' }}>{c.total_reviews || 0}</div><div style={{ fontSize: 10, color: '#6B6880' }}>Avis</div></div>
                       </div>
                     </div>
                   </div>
+                ))}
 
-                  {/* Concurrents */}
-                  {(competitors?.competitors || []).map((c, i) => {
-                    const betterRating = c.rating > (competitors?.main?.rating || 0)
-                    const betterReviews = c.total_reviews > (competitors?.main?.total_reviews || 0)
-                    return (
-                      <div key={i} style={{ background: '#111118', border: '1px solid #ffffff0f', borderRadius: 8, padding: '14px 16px', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>#{i + 1} {c.name}</div>
-                          <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                            <div style={{ textAlign: 'center' }}>
-                              <div style={{ fontSize: 18, fontWeight: 800, color: betterRating ? '#F05252' : '#5EE8B0' }}>
-                                {c.rating || '—'}★
+                <div style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', marginTop: 12, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
+                  {(competitors?.main?.total_reviews || 0) > Math.max(...(competitors?.competitors || []).map(c => c.total_reviews || 0))
+                    ? '🏆 Vous avez le plus d\'avis dans votre zone ! Continuez !'
+                    : '💪 Continuez à collecter des avis avec vos cartes NFC pour dépasser vos concurrents !'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== TAB CLASSEMENT LOCAL ===== */}
+        {activeTab === 'ranking' && (
+          <div>
+            {rankingLoading ? (
+              <div style={S.empty}>Calcul de votre classement local...</div>
+            ) : localRanking?.error ? (
+              <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>⚠️ {localRanking.error}</div>
+            ) : (
+              <>
+                {/* Score principal */}
+                <div style={{ ...S.card, textAlign: 'center', marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, color: '#6B6880', marginBottom: 12, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Votre position dans votre zone (1km)
+                  </div>
+                  <div style={{ fontSize: 80, fontWeight: 900, letterSpacing: -4, lineHeight: 1, color: localRanking?.rank === 1 ? '#F0A050' : localRanking?.rank <= 3 ? '#7C6AF7' : '#5EE8B0' }}>
+                    #{localRanking?.rank || '—'}
+                  </div>
+                  <div style={{ fontSize: 16, color: '#6B6880', marginTop: 8 }}>
+                    sur {localRanking?.total || '—'} établissements similaires
+                  </div>
+                  <div style={{ marginTop: 16, fontSize: 14, color: '#F0EEF8', fontWeight: 600 }}>
+                    {localRanking?.rank === 1 ? '🥇 Vous êtes le meilleur de votre zone !'
+                      : localRanking?.rank === 2 ? '🥈 Excellent ! Encore un effort pour la 1ère place.'
+                      : localRanking?.rank === 3 ? '🥉 Top 3 ! Continuez à collecter des avis.'
+                      : `💪 Encore ${localRanking?.rank - 1} place${localRanking?.rank - 1 > 1 ? 's' : ''} à remonter pour le podium !`}
+                  </div>
+                </div>
+
+                {/* Top 5 */}
+                <div style={S.card}>
+                  <div style={S.cardTitle}>Top 5 de votre zone</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                    {(localRanking?.top5 || []).map((place, i) => {
+                      const isYou = place.isMain
+                      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '12px 16px', borderRadius: 8,
+                          background: isYou ? '#7C6AF720' : '#1A1A24',
+                          border: isYou ? '1px solid #7C6AF740' : '1px solid transparent',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ fontSize: 20, width: 32, textAlign: 'center' }}>{medal}</div>
+                            <div>
+                              <div style={{ fontWeight: isYou ? 700 : 500, fontSize: 13, color: isYou ? '#7C6AF7' : '#F0EEF8' }}>
+                                {place.name} {isYou && <span style={{ fontSize: 10, fontWeight: 400, color: '#7C6AF7' }}>(vous)</span>}
                               </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontWeight: 700, color: '#F0A050', fontSize: 14 }}>{place.rating}★</div>
                               <div style={{ fontSize: 10, color: '#6B6880' }}>Note</div>
                             </div>
                             <div style={{ textAlign: 'center' }}>
-                              <div style={{ fontSize: 18, fontWeight: 800, color: betterReviews ? '#F05252' : '#5EE8B0' }}>
-                                {c.total_reviews || 0}
-                              </div>
+                              <div style={{ fontWeight: 700, fontSize: 14 }}>{place.total_reviews}</div>
                               <div style={{ fontSize: 10, color: '#6B6880' }}>Avis</div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
 
-                  {/* Message motivant */}
-                  <div style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', marginTop: 12, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
-                    {(competitors?.main?.total_reviews || 0) > Math.max(...(competitors?.competitors || []).map(c => c.total_reviews || 0))
-                      ? '🏆 Vous avez le plus d\'avis dans votre zone ! Continuez à collecter des avis avec vos cartes NFC.'
-                      : '💪 Continuez à collecter des avis avec vos cartes NFC pour dépasser vos concurrents !'}
+                  <div style={{ background: '#0A0A0F', borderRadius: 8, padding: '12px 14px', marginTop: 16, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
+                    📍 Classement basé sur la note Google et le nombre d'avis dans un rayon de 1km
                   </div>
                 </div>
               </>
@@ -413,8 +577,8 @@ const S = {
   planBadge: { background: '#7C6AF720', border: '1px solid #7C6AF740', color: '#7C6AF7', fontFamily: 'monospace', fontSize: 10, padding: '4px 8px', borderRadius: 4 },
   exportBtn: { background: '#1A1A24', border: '1px solid #ffffff1a', color: '#F0EEF8', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600 },
   logoutBtn: { background: 'transparent', border: '1px solid #ffffff1a', color: '#6B6880', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12 },
-  tabs: { display: 'flex', gap: 0, borderBottom: '1px solid #ffffff0f', padding: '0 28px', background: '#0A0A0F' },
-  tab: { background: 'transparent', border: 'none', borderBottom: '2px solid transparent', color: '#6B6880', padding: '14px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600, transition: 'all .15s' },
+  tabs: { display: 'flex', borderBottom: '1px solid #ffffff0f', padding: '0 28px', background: '#0A0A0F' },
+  tab: { background: 'transparent', border: 'none', borderBottom: '2px solid transparent', color: '#6B6880', padding: '14px 20px', cursor: 'pointer', fontSize: 13, fontWeight: 600 },
   tabActive: { color: '#F0EEF8', borderBottomColor: '#7C6AF7' },
   content: { padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 1100, margin: '0 auto' },
   periodRow: { display: 'flex', alignItems: 'center', gap: 12 },
@@ -426,11 +590,10 @@ const S = {
   metricCard: { background: '#111118', border: '1px solid #ffffff0f', borderRadius: 10, padding: '16px 18px' },
   metricLabel: { fontFamily: 'monospace', fontSize: 10, color: '#6B6880', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   metricValue: { fontSize: 28, fontWeight: 800, letterSpacing: -1, lineHeight: 1 },
-  metricDelta: { fontSize: 11, fontFamily: 'monospace', marginTop: 6 },
   metricSub: { fontSize: 11, color: '#6B6880', marginTop: 6 },
   card: { background: '#111118', border: '1px solid #ffffff0f', borderRadius: 10, padding: '20px 24px' },
-  cardTitle: { fontSize: 13, fontWeight: 700, color: '#F0EEF8', marginBottom: 16 },
-  empty: { color: '#6B6880', fontFamily: 'monospace', fontSize: 12, textAlign: 'center', padding: 40 },
+  cardTitle: { fontSize: 13, fontWeight: 700, marginBottom: 16 },
+  empty: { color: '#6B6880', fontFamily: 'monospace', fontSize: 12, textAlign: 'center', padding: 40, lineHeight: 2 },
   chart: { display: 'flex', alignItems: 'flex-end', gap: 6, height: 160, paddingTop: 24 },
   barWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 },
   barVal: { fontSize: 9, color: '#6B6880', fontFamily: 'monospace', height: 12 },
