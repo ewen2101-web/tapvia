@@ -22,7 +22,7 @@ export default async function handler(req, res) {
 
   // Créer une promo
   if (req.method === 'POST') {
-    const { redirect_id, client_name, type, value, amount_off, expires_in_days } = req.body
+    const { redirect_id, client_name, type, value, trial_plan, amount_off, expires_in_days } = req.body
 
     if (!redirect_id || !type) return res.status(400).json({ error: 'Champs manquants' })
 
@@ -38,6 +38,7 @@ export default async function handler(req, res) {
       await supabase.from('redirects').update({
         trial_ends_at,
         promo_active: true,
+        plan: trial_plan || 'Starter',
       }).eq('id', redirect_id)
 
       // Enregistre la promo
@@ -45,10 +46,13 @@ export default async function handler(req, res) {
         redirect_id,
         client_name,
         type: 'trial',
-        value, // nombre de jours
+        value,
         status: 'active',
         expires_at: trial_ends_at,
       }).select().single()
+
+      // Ajoute trial_plan à la réponse
+      if (data) data.trial_plan = trial_plan || 'Starter'
 
       if (error) return res.status(400).json({ error: error.message })
       return res.status(200).json({ ...data, trial_ends_at })
