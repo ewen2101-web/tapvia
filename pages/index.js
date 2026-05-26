@@ -26,12 +26,18 @@ export default function Admin() {
   const [negativeAlerts, setNegativeAlerts] = useState([])
   const [inactiveClients, setInactiveClients] = useState([])
   const [inactiveDays, setInactiveDays] = useState(14)
+  const [plans, setPlans] = useState([])
+  const [plansLoading, setPlansLoading] = useState(false)
+  const [editingPlan, setEditingPlan] = useState(null)
   const [promos, setPromos] = useState([])
   const [promoModal, setPromoModal] = useState(false)
   const [promoTarget, setPromoTarget] = useState(null)
   const [promoLoading, setPromoLoading] = useState(false)
   const [promoResult, setPromoResult] = useState(null)
   const [promoForm, setPromoForm] = useState({ type: 'trial', value: 30, trial_plan: 'Starter', amount_off: '', expires_in_days: '' })
+  const [plans, setPlans] = useState([])
+  const [plansLoading, setPlansLoading] = useState(false)
+  const [editingPlan, setEditingPlan] = useState(null) // { id, name, price, description }
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => {
@@ -40,12 +46,15 @@ export default function Admin() {
       fetchFinances()
       fetchNegativeAlerts()
       fetchPromos()
+      fetchPlans()
+      fetchPlans()
     }
   }, [auth])
 
   useEffect(() => {
     if (auth && activeSection === 'inactive') fetchInactiveClients()
     if (auth && activeSection === 'promos') fetchPromos()
+    if (auth && activeSection === 'settings') fetchPlans()
   }, [activeSection, inactiveDays])
 
   function notify(msg, type = 'success') {
@@ -71,6 +80,54 @@ export default function Admin() {
     const res = await fetch('/api/negative-alerts')
     const data = await res.json()
     setNegativeAlerts(Array.isArray(data) ? data : [])
+  }
+
+  async function fetchPlans() {
+    const res = await fetch('/api/plans')
+    const data = await res.json()
+    setPlans(Array.isArray(data) ? data : [])
+  }
+
+  async function updatePlan(plan) {
+    setPlansLoading(true)
+    const res = await fetch('/api/plans', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: plan.id, price: plan.price, description: plan.description, features: plan.features })
+    })
+    const data = await res.json()
+    if (data.error) { notify(data.error, 'error'); setPlansLoading(false); return }
+    setEditingPlan(null)
+    fetchPlans()
+    notify('Plan mis à jour ✓')
+    setPlansLoading(false)
+  }
+
+  async function fetchPlans() {
+    const res = await fetch('/api/plans')
+    const data = await res.json()
+    setPlans(Array.isArray(data) ? data : [])
+  }
+
+  async function updatePlan() {
+    if (!editingPlan) return
+    setPlansLoading(true)
+    const res = await fetch('/api/plans', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: editingPlan.id,
+        price: parseInt(editingPlan.price),
+        description: editingPlan.description,
+        features: editingPlan.features,
+      })
+    })
+    const data = await res.json()
+    if (data.error) { notify(data.error, 'error'); setPlansLoading(false); return }
+    notify(`Plan ${editingPlan.name} mis à jour → ${editingPlan.price}€/mois ✓`)
+    setEditingPlan(null)
+    fetchPlans()
+    setPlansLoading(false)
   }
 
   async function fetchPromos() {
@@ -100,6 +157,7 @@ export default function Admin() {
       if (data.error) { notify(data.error, 'error'); setPromoLoading(false); return }
       setPromoResult(data)
       fetchPromos()
+      fetchPlans()
       notify('Promo créée ✓')
     } catch (e) { notify('Erreur réseau', 'error') }
     setPromoLoading(false)
@@ -276,7 +334,9 @@ export default function Admin() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  const mrr = finances?.mrr || 0
+  // Calcule le MRR dynamiquement selon les prix actuels des plans
+  const planPrices = plans.reduce((acc, p) => { acc[p.name] = p.price; return acc }, { Starter: 19, Business: 39, Pro: 69 })
+  const mrr = finances?.mrr || clients.reduce((acc, c) => acc + (planPrices[c.plan] || 0), 0)
   const unreadAlerts = negativeAlerts.filter(a => a.status === 'unread').length
 
   // Top clients
@@ -327,6 +387,8 @@ export default function Admin() {
             { id: 'alerts', label: `🚨 Alertes${unreadAlerts > 0 ? ` (${unreadAlerts})` : ''}` },
             { id: 'inactive', label: '💤 Inactifs' },
             { id: 'promos', label: '🎁 Promos' },
+            { id: 'settings', label: '⚙️ Paramètres' },
+            { id: 'settings', label: '⚙️ Paramètres' },
           ].map(item => (
             <div key={item.id} style={{ ...S.navItem, ...(activeSection === item.id || (activeSection === 'client-detail' && item.id === 'clients') ? S.navActive : {}) }}
               onClick={() => setActiveSection(item.id)}>
@@ -887,6 +949,113 @@ export default function Admin() {
         </>
       )}
 
+      {/* ===== PARAMÈTRES ===== */}
+      {activeSection === 'settings' && (
+        <>
+          <div style={S.topbar}>
+            <div>
+              <div style={S.topbarTitle}>⚙️ Paramètres</div>
+              <div style={S.topbarSub}>Configuration des plans et prix</div>
+            </div>
+          </div>
+          <div style={S.content}>
+
+            {/* Gestion des plans */}
+            <div style={S.card}>
+              <div style={S.cardTitle}>💰 Prix des abonnements</div>
+              <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 16 }}>
+                Modifie les prix ici — ils se mettent à jour partout dans le dashboard immédiatement.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {plans.map(plan => (
+                  <div key={plan.id} style={{ background: '#1A1A24', borderRadius: 10, padding: '16px 20px' }}>
+                    {editingPlan?.id === plan.id ? (
+                      // Mode édition
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                          <div style={{ fontWeight: 800, fontSize: 16, color: plan.name === 'Pro' ? '#5EE8B0' : plan.name === 'Business' ? '#7C6AF7' : '#6B6880' }}>
+                            {plan.name}
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                          <div>
+                            <label style={S.formLabel}>Prix (€/mois)</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input
+                                style={{ ...S.input, width: 100 }}
+                                type="number"
+                                min="1"
+                                value={editingPlan.price}
+                                onChange={e => setEditingPlan(p => ({ ...p, price: e.target.value }))}
+                              />
+                              <span style={{ color: '#6B6880', fontSize: 13 }}>€/mois</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label style={S.formLabel}>Description</label>
+                            <input
+                              style={S.input}
+                              value={editingPlan.description || ''}
+                              onChange={e => setEditingPlan(p => ({ ...p, description: e.target.value }))}
+                              placeholder="Description du plan..."
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                          <button style={{ ...S.btnGhost, ...S.btnSm }} onClick={() => setEditingPlan(null)}>Annuler</button>
+                          <button style={{ ...S.btnPrimary, ...S.btnSm, opacity: plansLoading ? 0.6 : 1 }}
+                            onClick={() => updatePlan(editingPlan)} disabled={plansLoading}>
+                            {plansLoading ? 'Sauvegarde...' : 'Sauvegarder →'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      // Mode affichage
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ fontWeight: 800, fontSize: 18, color: plan.name === 'Pro' ? '#5EE8B0' : plan.name === 'Business' ? '#7C6AF7' : '#6B6880' }}>
+                              {plan.name}
+                            </div>
+                            <div style={{ fontSize: 24, fontWeight: 900, color: '#F0EEF8' }}>{plan.price}€<span style={{ fontSize: 13, fontWeight: 400, color: '#6B6880' }}>/mois</span></div>
+                          </div>
+                          {plan.description && <div style={{ fontSize: 12, color: '#6B6880', marginTop: 4 }}>{plan.description}</div>}
+                          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', marginTop: 6 }}>
+                            {clients.filter(c => c.plan === plan.name).length} client{clients.filter(c => c.plan === plan.name).length > 1 ? 's' : ''} · {clients.filter(c => c.plan === plan.name).length * plan.price}€ MRR
+                          </div>
+                        </div>
+                        <button style={{ ...S.btnGhost, ...S.btnSm }} onClick={() => setEditingPlan({ ...plan })}>
+                          ✏️ Modifier
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ background: '#0A0A0F', borderRadius: 8, padding: '12px 14px', marginTop: 16, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
+                ⚠️ Modifier un prix ici met à jour le dashboard uniquement. Pour modifier le prix sur Stripe, va dans ton dashboard Stripe → Catalogue de produits.
+              </div>
+            </div>
+
+            {/* Infos générales */}
+            <div style={S.card}>
+              <div style={S.cardTitle}>📊 Récapitulatif des plans</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {plans.map(plan => (
+                  <div key={plan.id} style={{ background: '#1A1A24', borderRadius: 8, padding: '16px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: plan.name === 'Pro' ? '#5EE8B0' : plan.name === 'Business' ? '#7C6AF7' : '#6B6880', marginBottom: 8 }}>{plan.name}</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: '#F0EEF8' }}>{plan.price}€</div>
+                    <div style={{ fontSize: 11, color: '#6B6880', marginTop: 4 }}>{clients.filter(c => c.plan === plan.name).length} clients</div>
+                    <div style={{ fontSize: 11, color: '#5EE8B0', marginTop: 2, fontFamily: 'monospace' }}>{clients.filter(c => c.plan === plan.name).length * plan.price}€ MRR</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </>
+      )}
+
       {/* Modal création promo */}
       {promoModal && (
         <div style={S.overlay} onClick={e => e.target === e.currentTarget && setPromoModal(false)}>
@@ -1019,6 +1188,125 @@ export default function Admin() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ===== PARAMÈTRES ===== */}
+      {activeSection === 'settings' && (
+        <>
+          <div style={S.topbar}>
+            <div>
+              <div style={S.topbarTitle}>⚙️ Paramètres</div>
+              <div style={S.topbarSub}>Gestion des plans et prix</div>
+            </div>
+          </div>
+          <div style={S.content}>
+            <div style={S.card}>
+              <div style={S.cardTitle}>💰 Prix des plans</div>
+              <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 16, lineHeight: 1.6 }}>
+                Modifie les prix directement ici — sans toucher au code. Les nouveaux prix s&apos;appliquent aux prochains paiements Stripe.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {plans.map(plan => (
+                  <div key={plan.id} style={{ background: '#1A1A24', borderRadius: 10, padding: '16px 20px', border: editingPlan?.id === plan.id ? '1px solid #7C6AF7' : '1px solid transparent' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: editingPlan?.id === plan.id ? 14 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          fontWeight: 800, fontSize: 14,
+                          color: plan.name === 'Pro' ? '#5EE8B0' : plan.name === 'Business' ? '#7C6AF7' : '#6B6880'
+                        }}>
+                          {plan.name}
+                        </div>
+                        {editingPlan?.id !== plan.id && (
+                          <div style={{ fontFamily: 'monospace', fontSize: 20, fontWeight: 800, color: '#F0EEF8' }}>
+                            {plan.price}€<span style={{ fontSize: 12, color: '#6B6880', fontWeight: 400 }}>/mois</span>
+                          </div>
+                        )}
+                        {plan.description && editingPlan?.id !== plan.id && (
+                          <div style={{ fontSize: 12, color: '#6B6880' }}>{plan.description}</div>
+                        )}
+                      </div>
+                      {editingPlan?.id !== plan.id ? (
+                        <button style={{ ...S.btnGhost, ...S.btnSm }}
+                          onClick={() => setEditingPlan({ ...plan })}>
+                          ✏️ Modifier
+                        </button>
+                      ) : (
+                        <button style={{ ...S.btnDanger, ...S.btnSm }}
+                          onClick={() => setEditingPlan(null)}>
+                          Annuler
+                        </button>
+                      )}
+                    </div>
+
+                    {editingPlan?.id === plan.id && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div>
+                          <label style={S.formLabel}>Prix mensuel (€)</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              style={{ ...S.input, width: 120, fontSize: 20, fontWeight: 800, textAlign: 'center' }}
+                              type="number"
+                              min="1"
+                              value={editingPlan.price}
+                              onChange={e => setEditingPlan(p => ({ ...p, price: e.target.value }))}
+                            />
+                            <span style={{ color: '#6B6880', fontSize: 14 }}>€ / mois</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label style={S.formLabel}>Description</label>
+                          <input
+                            style={S.input}
+                            placeholder="ex: 5 cartes NFC, dashboard complet"
+                            value={editingPlan.description || ''}
+                            onChange={e => setEditingPlan(p => ({ ...p, description: e.target.value }))}
+                          />
+                        </div>
+                        <div style={{ background: '#F0A05015', border: '1px solid #F0A05030', borderRadius: 6, padding: '8px 12px', fontSize: 11, color: '#F0A050' }}>
+                          ⚠️ Ce changement affecte les nouveaux paiements uniquement. Les abonnements existants ne sont pas modifiés automatiquement.
+                        </div>
+                        <button
+                          style={{ ...S.btnPrimary, opacity: plansLoading ? 0.6 : 1 }}
+                          onClick={updatePlan}
+                          disabled={plansLoading}
+                        >
+                          {plansLoading ? 'Enregistrement...' : `Enregistrer — ${editingPlan.price}€/mois →`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Aperçu des revenus avec nouveaux prix */}
+              {plans.length > 0 && (
+                <div style={{ marginTop: 20, padding: '14px 16px', background: '#0A0A0F', borderRadius: 8, border: '1px solid #ffffff0f' }}>
+                  <div style={{ fontSize: 11, color: '#6B6880', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+                    Aperçu MRR avec ces prix
+                  </div>
+                  <div style={{ display: 'flex', gap: 20 }}>
+                    {plans.map(plan => {
+                      const count = clients.filter(c => c.plan === plan.name).length
+                      return (
+                        <div key={plan.id} style={{ textAlign: 'center' }}>
+                          <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#6B6880' }}>{plan.name}</div>
+                          <div style={{ fontWeight: 700, fontSize: 16, color: '#5EE8B0', marginTop: 2 }}>{count * plan.price}€</div>
+                          <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880' }}>{count} client{count > 1 ? 's' : ''}</div>
+                        </div>
+                      )
+                    })}
+                    <div style={{ textAlign: 'center', borderLeft: '1px solid #ffffff0f', paddingLeft: 20 }}>
+                      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#6B6880' }}>MRR Total</div>
+                      <div style={{ fontWeight: 800, fontSize: 20, color: '#5EE8B0', marginTop: 2 }}>
+                        {plans.reduce((acc, plan) => acc + clients.filter(c => c.plan === plan.name).length * plan.price, 0)}€
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* Modal nouveau/modifier client */}
