@@ -35,9 +35,6 @@ export default function Admin() {
   const [promoLoading, setPromoLoading] = useState(false)
   const [promoResult, setPromoResult] = useState(null)
   const [promoForm, setPromoForm] = useState({ type: 'trial', value: 30, trial_plan: 'Starter', amount_off: '', expires_in_days: '' })
-  const [plans, setPlans] = useState([])
-  const [plansLoading, setPlansLoading] = useState(false)
-  const [editingPlan, setEditingPlan] = useState(null) // { id, name, price, description }
   const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'
 
   useEffect(() => {
@@ -103,12 +100,7 @@ export default function Admin() {
     setPlansLoading(false)
   }
 
-  async function fetchPlans() {
-    const res = await fetch('/api/plans')
-    const data = await res.json()
-    setPlans(Array.isArray(data) ? data : [])
-  }
-
+  
   async function updatePlan() {
     if (!editingPlan) return
     setPlansLoading(true)
