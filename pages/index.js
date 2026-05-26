@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Head from 'next/head'
 
-const PLAN_MRR = { Starter: 19, Business: 39, Pro: 69 }
+// Les prix sont chargés dynamiquement depuis Supabase via l'état 'plans'
 
 export default function Admin() {
   const [clients, setClients] = useState([])
@@ -77,6 +77,12 @@ export default function Admin() {
     const res = await fetch('/api/negative-alerts')
     const data = await res.json()
     setNegativeAlerts(Array.isArray(data) ? data : [])
+  }
+
+  // Helper — récupère le prix d'un plan depuis l'état plans
+  function getPlanPrice(planName) {
+    const plan = plans.find(p => p.name === planName)
+    return plan ? plan.price : planName === 'Pro' ? 69 : planName === 'Business' ? 39 : 19
   }
 
   async function fetchPlans() {
@@ -675,17 +681,19 @@ export default function Admin() {
                 <div style={S.cardTitle}>Répartition par plan</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {[
-                    { plan: 'Starter', color: '#6B6880', price: 19 },
-                    { plan: 'Business', color: '#7C6AF7', price: 39 },
-                    { plan: 'Pro', color: '#5EE8B0', price: 69 },
-                  ].map(({ plan, color, price }) => {
-                    const data = finances?.byPlan?.[plan]
-                    const pct = clients.length > 0 ? Math.round(((data?.count || 0) / clients.length) * 100) : 0
+                    { plan: 'Starter', color: '#6B6880' },
+                    { plan: 'Business', color: '#7C6AF7' },
+                    { plan: 'Pro', color: '#5EE8B0' },
+                  ].map(({ plan, color }) => {
+                    const price = getPlanPrice(plan)
+                    const count = clients.filter(c => c.plan === plan).length
+                    const planMrr = count * price
+                    const pct = clients.length > 0 ? Math.round((count / clients.length) * 100) : 0
                     return (
                       <div key={plan}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
                           <span style={{ fontWeight: 600, color }}>{plan} — {price}€/mois</span>
-                          <span style={{ fontFamily: 'monospace', color: '#6B6880' }}>{data?.count || 0} clients · {data?.mrr || 0}€ MRR ({pct}%)</span>
+                          <span style={{ fontFamily: 'monospace', color: '#6B6880' }}>{count} clients · {planMrr}€ MRR ({pct}%)</span>
                         </div>
                         <div style={{ height: 8, background: '#1A1A24', borderRadius: 4, overflow: 'hidden' }}>
                           <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4 }} />
@@ -1087,17 +1095,20 @@ export default function Admin() {
                     <label style={S.formLabel}>Plan à tester</label>
                     <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
                       {[
-                        { plan: 'Starter', price: '19€/mois', color: '#6B6880' },
-                        { plan: 'Business', price: '39€/mois', color: '#7C6AF7' },
-                        { plan: 'Pro', price: '69€/mois', color: '#5EE8B0' },
-                      ].map(({ plan, price, color }) => (
+                        { plan: 'Starter', color: '#6B6880' },
+                        { plan: 'Business', color: '#7C6AF7' },
+                        { plan: 'Pro', color: '#5EE8B0' },
+                      ].map(({ plan, color }) => {
+                        const price = `${getPlanPrice(plan)}€/mois`
+                        return (
                         <button key={plan} onClick={() => setPromoForm(f => ({ ...f, trial_plan: plan }))}
                           style={{ ...S.btnGhost, ...S.btnSm, flex: 1,
                             ...(promoForm.trial_plan === plan ? { background: `${color}20`, color, borderColor: color } : {}) }}>
                           <div style={{ fontWeight: 700 }}>{plan}</div>
                           <div style={{ fontSize: 10, opacity: 0.7 }}>{price}</div>
                         </button>
-                      ))}
+                        )
+                      })}
                     </div>
                     <label style={S.formLabel}>Durée de l'essai</label>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -1321,9 +1332,19 @@ export default function Admin() {
             <input style={S.input} placeholder="contact@client.fr" value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} />
             <label style={S.formLabel}>Plan</label>
             <select style={S.input} value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
-              <option value="Starter">Starter — 19€/mois</option>
-              <option value="Business">Business — 39€/mois</option>
-              <option value="Pro">Pro — 69€/mois</option>
+              {plans.length > 0
+                ? plans.map(p => <option key={p.name} value={p.name}>{p.name} — {p.price}€/mois</option>)
+                : <>
+                    {plans.length > 0
+                      ? plans.map(p => <option key={p.name} value={p.name}>{p.name} — {p.price}€/mois</option>)
+                      : <>
+                          <option value="Starter">Starter</option>
+                          <option value="Business">Business</option>
+                          <option value="Pro">Pro</option>
+                        </>
+                    }
+                  </>
+              }
             </select>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
               <button style={S.btnGhost} onClick={() => setModal(false)}>Annuler</button>
