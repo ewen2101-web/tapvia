@@ -88,7 +88,9 @@ export default function Admin() {
   async function fetchPlans() {
     const res = await fetch('/api/plans')
     const data = await res.json()
-    setPlans(Array.isArray(data) ? data : [])
+    const planData = Array.isArray(data) ? data : []
+    setPlans(planData)
+    return planData
   }
 
   async function updatePlan(plan) {
