@@ -19,10 +19,43 @@ export default async function handler(req, res) {
     const { lat, lng } = main.geometry.location
 
     // Types à exclure (trop génériques)
-    const excludedTypes = ['point_of_interest', 'establishment', 'store', 'premise', 'political', 'locality', 'country', 'route']
+    const excludedTypes = [
+      'point_of_interest', 'establishment', 'store', 'premise',
+      'political', 'locality', 'country', 'route', 'food',
+      'health', 'finance', 'place_of_worship', 'general_contractor'
+    ]
 
-    // Trouve le type le plus spécifique
-    const specificType = main.types?.find(t => !excludedTypes.includes(t)) || 'establishment'
+    const typeMapping = {
+      'restaurant': 'restaurant',
+      'cafe': 'cafe',
+      'bar': 'bar',
+      'bakery': 'bakery',
+      'hair_care': 'hair_care',
+      'beauty_salon': 'beauty_salon',
+      'car_repair': 'car_repair',
+      'pharmacy': 'pharmacy',
+      'doctor': 'doctor',
+      'dentist': 'dentist',
+      'gym': 'gym',
+      'hotel': 'lodging',
+      'lodging': 'lodging',
+      'supermarket': 'supermarket',
+      'clothing_store': 'clothing_store',
+      'shoe_store': 'shoe_store',
+      'florist': 'florist',
+      'jewelry_store': 'jewelry_store',
+      'night_club': 'night_club',
+      'meal_takeaway': 'meal_takeaway',
+      'meal_delivery': 'meal_delivery',
+    }
+
+    let specificType = null
+    for (const t of (main.types || [])) {
+      if (typeMapping[t]) { specificType = typeMapping[t]; break }
+    }
+    if (!specificType) {
+      specificType = main.types?.find(t => !excludedTypes.includes(t)) || 'establishment'
+    }
 
     // Tous les établissements du même type dans 1km
     const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=1000&type=${specificType}&language=fr&key=${GOOGLE_API_KEY}`
