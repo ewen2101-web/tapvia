@@ -512,9 +512,10 @@ export default function Admin() {
                           <td style={S.td}>
                             <select style={{ background: '#1A1A24', border: '1px solid #ffffff1a', color: '#F0EEF8', borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer' }}
                               value={c.plan} onChange={e => changePlan(c.id, e.target.value)}>
-                              <option value="Starter">Starter 19€</option>
-                              <option value="Business">Business 39€</option>
-                              <option value="Pro">Pro 69€</option>
+                              {plans.length > 0
+                                ? plans.map(p => <option key={p.name} value={p.name}>{p.name} {p.price}€</option>)
+                                : ['Starter','Business','Pro'].map(p => <option key={p} value={p}>{p}</option>)
+                              }
                             </select>
                           </td>
                           <td style={S.td}><div style={{ fontWeight: 700 }}>{c.scans?.[0]?.count || 0}</div></td>
