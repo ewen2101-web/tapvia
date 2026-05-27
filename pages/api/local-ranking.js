@@ -17,23 +17,39 @@ export default async function handler(req, res) {
 
     const main = detailsData.result
     const { lat, lng } = main.geometry.location
-    const type = main.types?.[0] || 'establishment'
 
-    // Tous les établissements similaires dans 1km
-    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=1000&type=${type}&language=fr&key=${GOOGLE_API_KEY}`
+    // Types à exclure (trop génériques)
+    const excludedTypes = ['point_of_interest', 'establishment', 'store', 'premise', 'political', 'locality', 'country', 'route']
+
+    // Trouve le type le plus spécifique
+    const specificType = main.types?.find(t => !excludedTypes.includes(t)) || 'establishment'
+
+    // Tous les établissements du même type dans 1km
+    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=1000&type=${specificType}&language=fr&key=${GOOGLE_API_KEY}`
     const nearbyRes = await fetch(nearbyUrl)
     const nearbyData = await nearbyRes.json()
 
-    const allPlaces = (nearbyData.results || [])
-      .filter(p => p.rating && p.user_ratings_total)
-      .map(p => ({
-        place_id: p.place_id,
-        name: p.name,
-        rating: p.rating || 0,
-        total_reviews: p.user_ratings_total || 0,
-        isMain: p.place_id === place_id,
-      }))
-      .sort((a, b) => b.rating - a.rating || b.total_reviews - a.total_reviews)
+    // Inclut l'établissement principal dans le classement
+    const mainEntry = {
+      place_id,
+      name: main.name,
+      rating: main.rating || 0,
+      total_reviews: main.user_ratings_total || 0,
+      isMain: true,
+    }
+
+    const allPlaces = [
+      mainEntry,
+      ...(nearbyData.results || [])
+        .filter(p => p.place_id !== place_id && p.rating && p.user_ratings_total > 0)
+        .map(p => ({
+          place_id: p.place_id,
+          name: p.name,
+          rating: p.rating || 0,
+          total_reviews: p.user_ratings_total || 0,
+          isMain: false,
+        }))
+    ].sort((a, b) => b.rating - a.rating || b.total_reviews - a.total_reviews)
 
     const rank = allPlaces.findIndex(p => p.place_id === place_id) + 1
     const total = allPlaces.length
@@ -41,6 +57,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       rank,
       total,
+      type: specificType,
       main: {
         name: main.name,
         rating: main.rating || 0,
