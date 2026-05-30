@@ -16,6 +16,7 @@ export default function ClientDashboard() {
   const [period, setPeriod] = useState(30)
   const [redirectId, setRedirectId] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [radius, setRadius] = useState(500)
   const [alertsShown, setAlertsShown] = useState(false)
 
   useEffect(() => {
@@ -33,9 +34,9 @@ export default function ClientDashboard() {
   useEffect(() => {
     if (!redirectId) return
     if (activeTab === 'reviews' && !reviews) fetchReviews(redirectId)
-    if (activeTab === 'competitors' && !competitors) fetchCompetitors(redirectId)
-    if (activeTab === 'ranking' && !localRanking) fetchLocalRanking(redirectId)
-  }, [activeTab])
+    if (activeTab === 'competitors') fetchCompetitors(redirectId, radius)
+    if (activeTab === 'ranking') fetchLocalRanking(redirectId, radius)
+  }, [activeTab, radius])
 
   async function fetchStats(id, days) {
     setLoading(true)
@@ -56,6 +57,7 @@ export default function ClientDashboard() {
     const res = await fetch(`/api/google-reviews?redirect_id=${id}`)
     const data = await res.json()
     setReviews(data)
+    // Enregistre la note dans l'historique automatiquement
     if (data.rating) {
       await fetch('/api/rating-history', {
         method: 'POST',
@@ -67,21 +69,23 @@ export default function ClientDashboard() {
     setReviewsLoading(false)
   }
 
-  async function fetchCompetitors(id) {
+  async function fetchCompetitors(id, r = 500) {
     setCompetitorsLoading(true)
+    setCompetitors(null)
     const placeId = stats?.client?.google_place_id
     if (!placeId) { setCompetitors({ error: 'Place ID non configuré.' }); setCompetitorsLoading(false); return }
-    const res = await fetch(`/api/competitors?place_id=${placeId}`)
+    const res = await fetch(`/api/competitors?place_id=${placeId}&radius=${r}`)
     const data = await res.json()
     setCompetitors(data)
     setCompetitorsLoading(false)
   }
 
-  async function fetchLocalRanking(id) {
+  async function fetchLocalRanking(id, r = 1000) {
     setRankingLoading(true)
+    setLocalRanking(null)
     const placeId = stats?.client?.google_place_id
     if (!placeId) { setLocalRanking({ error: 'Place ID non configuré.' }); setRankingLoading(false); return }
-    const res = await fetch(`/api/local-ranking?place_id=${placeId}`)
+    const res = await fetch(`/api/local-ranking?place_id=${placeId}&radius=${r}`)
     const data = await res.json()
     setLocalRanking(data)
     setRankingLoading(false)
@@ -108,25 +112,16 @@ export default function ClientDashboard() {
     </div>
   )
 
-  // ✅ FIX Bug 2 : objectif mensuel basé sur les NOUVEAUX scans du mois, pas le total d'avis
-  const scansThisMonth = stats.scansThisMonth || 0
-  const monthlyGoal = stats.client.monthly_goal || 50
-  const goalProgress = Math.min(Math.round((scansThisMonth / monthlyGoal) * 100), 100)
-
-  // ✅ FIX Bug 3 : taux de conversion affiché seulement si données cohérentes
-  // Un taux de conversion n'a de sens que si on a des scans ET des avis,
-  // et que le nombre d'avis ne dépasse pas le nombre de scans
-  const hasValidConversionData = stats.totalScans > 0 && stats.totalReviews > 0 && stats.totalScans >= stats.totalReviews
-  const conversionRate = hasValidConversionData
-    ? Math.round((stats.totalReviews / stats.totalScans) * 100)
-    : null
-
+  const conversionRate = stats.totalScans > 0 ? Math.round((stats.totalReviews / stats.totalScans) * 100) : 0
   const estimatedViews = (stats.totalScans || 0) * 8
   const chartData = stats.scansByDay || {}
   const chartDays = Object.keys(chartData).slice(-14)
   const chartMax = Math.max(...Object.values(chartData), 1)
   const negativeReviews = (reviews?.reviews || []).filter(r => r.rating <= 2)
+  const monthlyGoal = stats.client.monthly_goal || 50
+  const goalProgress = Math.min(Math.round(((stats.totalReviews || 0) / monthlyGoal) * 100), 100)
 
+  // Calcul évolution note
   const historyData = ratingHistory || []
   const ratingEvolution = historyData.length >= 2
     ? (historyData[historyData.length - 1].rating - historyData[0].rating).toFixed(1)
@@ -140,6 +135,7 @@ export default function ClientDashboard() {
     <div style={S.page}>
       <Head><title>{stats.client.client_name} — Dashboard Tapvia</title></Head>
 
+      {/* Alerte avis négatifs */}
       {reviews && negativeReviews.length > 0 && !alertsShown && (
         <div style={S.alertBanner}>
           <div style={S.alertBannerContent}>
@@ -153,6 +149,7 @@ export default function ClientDashboard() {
         </div>
       )}
 
+      {/* Header */}
       <header style={S.header}>
         <div style={S.headerLeft}>
           <div style={S.logo}>tap<span style={{ color: '#7C6AF7' }}>via</span></div>
@@ -166,6 +163,7 @@ export default function ClientDashboard() {
         </div>
       </header>
 
+      {/* Tabs */}
       <div style={S.tabs}>
         {[
           { id: 'overview', label: '📊 Vue d\'ensemble' },
@@ -181,6 +179,7 @@ export default function ClientDashboard() {
 
       <div style={S.content}>
 
+        {/* ===== TAB OVERVIEW ===== */}
         {activeTab === 'overview' && (
           <>
             <div style={S.periodRow}>
@@ -192,6 +191,7 @@ export default function ClientDashboard() {
               </div>
             </div>
 
+            {/* Métriques */}
             <div style={S.metrics}>
               {[
                 { label: 'Scans NFC', value: stats.totalScans || 0, color: '#7C6AF7', delta: `${(stats.delta || 0) >= 0 ? '↑' : '↓'} ${Math.abs(stats.delta || 0)}% vs période préc.`, deltaColor: (stats.delta || 0) >= 0 ? '#5EE8B0' : '#F05252' },
@@ -208,15 +208,16 @@ export default function ClientDashboard() {
               ))}
             </div>
 
-            {/* ✅ FIX Bug 2 : objectif mensuel basé sur scansThisMonth */}
+            {/* Objectif mensuel */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={S.cardTitle}>🎯 Objectif mensuel de scans</div>
+                <div style={S.cardTitle}>🎯 Objectif mensuel d'avis</div>
                 <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#6B6880' }}>
-                  {scansThisMonth} / {monthlyGoal} scans ce mois
+                  {stats.totalReviews || 0} / {monthlyGoal} avis
                 </div>
               </div>
 
+              {/* Barre de progression */}
               <div style={{ height: 12, background: '#1A1A24', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
                 <div style={{
                   height: '100%',
@@ -232,10 +233,10 @@ export default function ClientDashboard() {
                   {goalProgress >= 100
                     ? '🎉 Objectif atteint ! Excellent travail !'
                     : goalProgress >= 70
-                    ? `💪 Encore ${monthlyGoal - scansThisMonth} scans pour atteindre l'objectif`
+                    ? `💪 Encore ${monthlyGoal - (stats.totalReviews || 0)} avis pour atteindre l'objectif`
                     : goalProgress >= 40
                     ? `📈 Continuez, vous êtes à ${goalProgress}% de l'objectif`
-                    : `🚀 Démarrage — ${monthlyGoal - scansThisMonth} scans restants ce mois`}
+                    : `🚀 Démarrage — ${monthlyGoal - (stats.totalReviews || 0)} avis restants`}
                 </div>
                 <div style={{
                   fontSize: 22, fontWeight: 800,
@@ -246,6 +247,7 @@ export default function ClientDashboard() {
               </div>
             </div>
 
+            {/* Évolution note Google */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                 <div style={S.cardTitle}>📈 Évolution de votre note Google</div>
@@ -271,8 +273,10 @@ export default function ClientDashboard() {
                 </div>
               ) : (
                 <>
+                  {/* Graphique ligne */}
                   <div style={{ position: 'relative', height: 140, marginBottom: 8 }}>
                     <svg width="100%" height="140" viewBox={`0 0 ${historyData.length * 80} 140`} preserveAspectRatio="none">
+                      {/* Ligne de la note */}
                       <polyline
                         points={historyData.map((h, i) => {
                           const x = (i / (historyData.length - 1)) * (historyData.length * 80)
@@ -285,6 +289,7 @@ export default function ClientDashboard() {
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
+                      {/* Points */}
                       {historyData.map((h, i) => {
                         const x = (i / (historyData.length - 1)) * (historyData.length * 80)
                         const y = 120 - ((h.rating - historyMin) / (historyMax - historyMin)) * 100
@@ -297,6 +302,7 @@ export default function ClientDashboard() {
                       })}
                     </svg>
                   </div>
+                  {/* Labels mois */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>
                     {historyData.map((h, i) => (
                       <div key={i} style={{ fontFamily: 'monospace', fontSize: 10, color: '#6B6880', textAlign: 'center' }}>
@@ -308,6 +314,7 @@ export default function ClientDashboard() {
               )}
             </div>
 
+            {/* Graphique scans */}
             <div style={S.card}>
               <div style={S.cardTitle}>Scans par jour — {period} derniers jours</div>
               {chartDays.length === 0 ? (
@@ -330,32 +337,17 @@ export default function ClientDashboard() {
             </div>
 
             <div style={S.row}>
-              {/* ✅ FIX Bug 3 : taux de conversion masqué si données incohérentes */}
               <div style={{ ...S.card, flex: 1 }}>
                 <div style={S.cardTitle}>Taux de conversion</div>
-                {conversionRate === null ? (
-                  <div style={{ padding: '20px 0' }}>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: '#6B6880', letterSpacing: -1 }}>—</div>
-                    <div style={{ fontSize: 12, color: '#6B6880', fontFamily: 'monospace', marginTop: 8 }}>
-                      {stats.totalScans === 0
-                        ? 'Aucun scan enregistré pour le moment.'
-                        : 'Données insuffisantes — les statistiques apparaîtront une fois les cartes NFC activées.'}
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div style={S.conversionRate}>{conversionRate}%</div>
-                    <div style={S.conversionSub}>{stats.totalScans} scans → {stats.totalReviews} avis</div>
-                    <div style={S.progressBar}><div style={{ ...S.progressFill, width: `${conversionRate}%` }} /></div>
-                    <div style={S.conversionTip}>
-                      {conversionRate < 15 ? '💡 Place la carte NFC en zone de caisse pour améliorer la conversion.'
-                        : conversionRate < 30 ? '👍 Bonne conversion ! Continue ainsi.'
-                        : '🚀 Excellente conversion !'}
-                    </div>
-                  </>
-                )}
+                <div style={S.conversionRate}>{conversionRate}%</div>
+                <div style={S.conversionSub}>{stats.totalScans || 0} scans → {stats.totalReviews || 0} avis</div>
+                <div style={S.progressBar}><div style={{ ...S.progressFill, width: `${conversionRate}%` }} /></div>
+                <div style={S.conversionTip}>
+                  {conversionRate < 15 ? '💡 Place la carte NFC en zone de caisse pour améliorer la conversion.'
+                    : conversionRate < 30 ? '👍 Bonne conversion ! Continue ainsi.'
+                    : '🚀 Excellente conversion !'}
+                </div>
               </div>
-
               <div style={{ ...S.card, flex: 1 }}>
                 <div style={S.cardTitle}>Visibilité Google estimée</div>
                 <div style={S.visibilityWrap}>
@@ -378,6 +370,7 @@ export default function ClientDashboard() {
           </>
         )}
 
+        {/* ===== TAB AVIS ===== */}
         {activeTab === 'reviews' && (
           <div>
             {reviewsLoading ? (
@@ -430,7 +423,7 @@ export default function ClientDashboard() {
                       <div style={{ fontSize: 13, color: '#C8C4D8', lineHeight: 1.6 }}>
                         {review.text || <span style={{ color: '#6B6880', fontStyle: 'italic' }}>Pas de commentaire</span>}
                       </div>
-                      
+                      <a
                         href={`https://search.google.com/local/writereview?placeid=${stats.client.google_place_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -446,16 +439,38 @@ export default function ClientDashboard() {
           </div>
         )}
 
+        {/* ===== TAB CONCURRENTS ===== */}
         {activeTab === 'competitors' && (
           <div>
+            
+              {/* Sélecteur de rayon */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#6B6880' }}>Rayon de comparaison :</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    { label: '500m', value: 500 },
+                    { label: '1km', value: 1000 },
+                    { label: '5km', value: 5000 },
+                    { label: '10km', value: 10000 },
+                    { label: '50km', value: 50000 },
+                  ].map(r => (
+                    <button key={r.value}
+                      style={{ ...S.periodBtn, ...(radius === r.value ? S.periodActive : {}) }}
+                      onClick={() => setRadius(r.value)}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             {competitorsLoading ? (
-              <div style={S.empty}>Recherche des concurrents proches...</div>
+              <div style={S.empty}>Recherche des concurrents dans un rayon de {radius >= 1000 ? `${radius/1000}km` : `${radius}m`}...</div>
             ) : competitors?.error ? (
               <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>⚠️ {competitors.error}</div>
             ) : (
               <div style={S.card}>
-                <div style={S.cardTitle}>Comparaison locale — rayon 500m</div>
+                <div style={S.cardTitle}>Comparaison locale — rayon {radius >= 1000 ? `${radius/1000}km` : `${radius}m`}</div>
                 <div style={{ fontSize: 12, color: '#6B6880', marginBottom: 16 }}>Établissements similaires dans votre zone</div>
+
                 <div style={{ background: '#7C6AF720', border: '1px solid #7C6AF740', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#7C6AF7' }}>⭐ {competitors?.main?.name} <span style={{ fontSize: 11, fontWeight: 400 }}>(vous)</span></div>
@@ -465,6 +480,7 @@ export default function ClientDashboard() {
                     </div>
                   </div>
                 </div>
+
                 {(competitors?.competitors || []).map((c, i) => (
                   <div key={i} style={{ background: '#111118', border: '1px solid #ffffff0f', borderRadius: 8, padding: '14px 16px', marginBottom: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -476,6 +492,7 @@ export default function ClientDashboard() {
                     </div>
                   </div>
                 ))}
+
                 <div style={{ background: '#1A1A24', borderRadius: 8, padding: '12px 14px', marginTop: 12, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
                   {(competitors?.main?.total_reviews || 0) > Math.max(...(competitors?.competitors || []).map(c => c.total_reviews || 0))
                     ? '🏆 Vous avez le plus d\'avis dans votre zone ! Continuez !'
@@ -486,14 +503,36 @@ export default function ClientDashboard() {
           </div>
         )}
 
+        {/* ===== TAB CLASSEMENT LOCAL ===== */}
         {activeTab === 'ranking' && (
           <div>
+            
+              {/* Sélecteur de rayon */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#6B6880' }}>Rayon de comparaison :</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    { label: '500m', value: 500 },
+                    { label: '1km', value: 1000 },
+                    { label: '5km', value: 5000 },
+                    { label: '10km', value: 10000 },
+                    { label: '50km', value: 50000 },
+                  ].map(r => (
+                    <button key={r.value}
+                      style={{ ...S.periodBtn, ...(radius === r.value ? S.periodActive : {}) }}
+                      onClick={() => setRadius(r.value)}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             {rankingLoading ? (
-              <div style={S.empty}>Calcul de votre classement local...</div>
+              <div style={S.empty}>Calcul du classement dans un rayon de {radius >= 1000 ? `${radius/1000}km` : `${radius}m`}...</div>
             ) : localRanking?.error ? (
               <div style={{ ...S.card, color: '#F05252', fontFamily: 'monospace', fontSize: 12 }}>⚠️ {localRanking.error}</div>
             ) : (
               <>
+                {/* Score principal */}
                 <div style={{ ...S.card, textAlign: 'center', marginBottom: 16 }}>
                   <div style={{ fontSize: 13, color: '#6B6880', marginBottom: 12, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     Votre position dans votre zone (1km)
@@ -511,6 +550,8 @@ export default function ClientDashboard() {
                       : `💪 Encore ${localRanking?.rank - 1} place${localRanking?.rank - 1 > 1 ? 's' : ''} à remonter pour le podium !`}
                   </div>
                 </div>
+
+                {/* Top 5 */}
                 <div style={S.card}>
                   <div style={S.cardTitle}>Top 5 de votre zone</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
@@ -546,6 +587,7 @@ export default function ClientDashboard() {
                       )
                     })}
                   </div>
+
                   <div style={{ background: '#0A0A0F', borderRadius: 8, padding: '12px 14px', marginTop: 16, fontSize: 12, color: '#6B6880', lineHeight: 1.6 }}>
                     📍 Classement basé sur la note Google et le nombre d'avis dans un rayon de 1km
                   </div>
