@@ -2,7 +2,7 @@ const GOOGLE_API_KEY = process.env.GOOGLE_PLACES_API_KEY
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end()
-  const { place_id } = req.query
+  const { place_id, radius = 500 } = req.query
   if (!place_id) return res.status(400).json({ error: 'place_id requis' })
 
   try {
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     }
 
     // Cherche les concurrents avec le même type spécifique
-    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=500&type=${specificType}&language=fr&key=${GOOGLE_API_KEY}`
+    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${Math.min(parseInt(radius), 50000)}&type=${specificType}&language=fr&key=${GOOGLE_API_KEY}`
     const nearbyRes = await fetch(nearbyUrl)
     const nearbyData = await nearbyRes.json()
 
