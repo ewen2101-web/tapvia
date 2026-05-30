@@ -112,14 +112,16 @@ export default function ClientDashboard() {
     </div>
   )
 
-  const conversionRate = stats.totalScans > 0 ? Math.round((stats.totalReviews / stats.totalScans) * 100) : 0
+  // Taux de conversion basé sur les nouveaux avis de la période
+  const conversionRate = stats?.conversionRate || 0
+  const newReviewsThisMonth = stats?.newReviewsThisMonth || 0
   const estimatedViews = (stats.totalScans || 0) * 8
   const chartData = stats.scansByDay || {}
   const chartDays = Object.keys(chartData).slice(-14)
   const chartMax = Math.max(...Object.values(chartData), 1)
   const negativeReviews = (reviews?.reviews || []).filter(r => r.rating <= 2)
   const monthlyGoal = stats.client.monthly_goal || 50
-  const goalProgress = Math.min(Math.round(((stats.totalReviews || 0) / monthlyGoal) * 100), 100)
+  const goalProgress = Math.min(Math.round((newReviewsThisMonth / monthlyGoal) * 100), 100)
 
   // Calcul évolution note
   const historyData = ratingHistory || []
@@ -233,10 +235,10 @@ export default function ClientDashboard() {
                   {goalProgress >= 100
                     ? '🎉 Objectif atteint ! Excellent travail !'
                     : goalProgress >= 70
-                    ? `💪 Encore ${monthlyGoal - (stats.totalReviews || 0)} avis pour atteindre l'objectif`
+                    ? `💪 Encore ${monthlyGoal - newReviewsThisMonth} avis pour atteindre l'objectif`
                     : goalProgress >= 40
                     ? `📈 Continuez, vous êtes à ${goalProgress}% de l'objectif`
-                    : `🚀 Démarrage — ${monthlyGoal - (stats.totalReviews || 0)} avis restants`}
+                    : `🚀 Démarrage — ${monthlyGoal - newReviewsThisMonth} avis restants ce mois`}
                 </div>
                 <div style={{
                   fontSize: 22, fontWeight: 800,
@@ -340,7 +342,7 @@ export default function ClientDashboard() {
               <div style={{ ...S.card, flex: 1 }}>
                 <div style={S.cardTitle}>Taux de conversion</div>
                 <div style={S.conversionRate}>{conversionRate}%</div>
-                <div style={S.conversionSub}>{stats.totalScans || 0} scans → {stats.totalReviews || 0} avis</div>
+                <div style={S.conversionSub}>{stats.totalScans || 0} scans → {newReviewsThisMonth} nouveaux avis ce mois</div>
                 <div style={S.progressBar}><div style={{ ...S.progressFill, width: `${conversionRate}%` }} /></div>
                 <div style={S.conversionTip}>
                   {conversionRate < 15 ? '💡 Place la carte NFC en zone de caisse pour améliorer la conversion.'
